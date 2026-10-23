@@ -13,7 +13,11 @@ import {
   FileSpreadsheet,
   Terminal,
   ShieldCheck,
-  ChevronRight
+  ChevronRight,
+  GitPullRequest,
+  Layers,
+  BookOpen,
+  Settings
 } from 'lucide-react';
 
 export type ActiveTab =
@@ -22,14 +26,18 @@ export type ActiveTab =
   | 'documentos'
   | 'ia-auditor'
   | 'hallazgos'
+  | 'workflow'
+  | 'matrices'
   | 'riesgos'
   | 'proveedores'
   | 'pagos'
   | 'web-audit'
+  | 'catalogo-normativo'
   | 'normativas'
   | 'reportes'
   | 'desktop-pack'
-  | 'seguridad';
+  | 'seguridad'
+  | 'settings';
 
 interface SidebarProps {
   activeTab: ActiveTab;
@@ -37,6 +45,7 @@ interface SidebarProps {
   hallazgosCount: number;
   riesgosCriticosCount: number;
   pagosDuplicadosCount: number;
+  workflowPendingCount?: number;
 }
 
 export const Sidebar: React.FC<SidebarProps> = ({
@@ -45,6 +54,7 @@ export const Sidebar: React.FC<SidebarProps> = ({
   hallazgosCount,
   riesgosCriticosCount,
   pagosDuplicadosCount,
+  workflowPendingCount = 0,
 }) => {
   const menuItems: { id: ActiveTab; label: string; icon: React.ReactNode; badge?: number; badgeColor?: string }[] = [
     { id: 'dashboard', label: 'Dashboard Ejecutivo', icon: <LayoutDashboard className="w-4 h-4" /> },
@@ -58,6 +68,14 @@ export const Sidebar: React.FC<SidebarProps> = ({
       badge: hallazgosCount,
       badgeColor: 'bg-amber-500/20 text-amber-300 border-amber-500/30'
     },
+    {
+      id: 'workflow',
+      label: 'Flujo de Aprobación',
+      icon: <GitPullRequest className="w-4 h-4 text-purple-400" />,
+      badge: workflowPendingCount > 0 ? workflowPendingCount : undefined,
+      badgeColor: 'bg-purple-500/20 text-purple-300 border-purple-500/30'
+    },
+    { id: 'matrices', label: 'Matrices de Auditoría (5)', icon: <Layers className="w-4 h-4 text-emerald-400" /> },
     {
       id: 'riesgos',
       label: 'Matriz de Riesgos',
@@ -74,10 +92,12 @@ export const Sidebar: React.FC<SidebarProps> = ({
       badgeColor: 'bg-red-500/20 text-red-300 border-red-500/30'
     },
     { id: 'web-audit', label: 'Auditoría Sitios Web', icon: <Globe className="w-4 h-4 text-emerald-400" /> },
-    { id: 'normativas', label: 'Base Normativa', icon: <Scale className="w-4 h-4 text-sky-400" /> },
+    { id: 'catalogo-normativo', label: 'Catálogo Normativo (Ley/Art)', icon: <BookOpen className="w-4 h-4 text-sky-400" /> },
+    { id: 'normativas', label: 'Base de Conocimiento Legal', icon: <Scale className="w-4 h-4 text-slate-400" /> },
     { id: 'reportes', label: 'Reportes & Exportaciones', icon: <FileSpreadsheet className="w-4 h-4 text-blue-400" /> },
     { id: 'desktop-pack', label: 'Paquete Python Desktop', icon: <Terminal className="w-4 h-4 text-purple-400" /> },
     { id: 'seguridad', label: 'Seguridad & Bitácora', icon: <ShieldCheck className="w-4 h-4 text-slate-400" /> },
+    { id: 'settings', label: 'Configuración & Moneda', icon: <Settings className="w-4 h-4 text-slate-400" /> },
   ];
 
   return (

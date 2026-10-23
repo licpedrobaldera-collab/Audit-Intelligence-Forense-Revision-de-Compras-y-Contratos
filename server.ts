@@ -2,12 +2,31 @@ import express, { Request, Response } from 'express';
 import { createServer as createViteServer } from 'vite';
 import path from 'path';
 import dotenv from 'dotenv';
-import { db, Expediente, Hallazgo, Riesgo, Proveedor, Contrato, Pago, Evidencia } from './server/db.ts';
+import {
+  db,
+  Expediente,
+  Hallazgo,
+  Riesgo,
+  Proveedor,
+  Contrato,
+  Pago,
+  Evidencia,
+  DocumentVersion,
+  FindingEvidence,
+  NormativeCatalogItem,
+  WorkflowItem,
+  AppSettings,
+  WorkflowStatus
+} from './server/db.ts';
 import {
   analyzeDocumentWithGemini,
   ocrExtractWithGemini,
   generateStructuredFinding,
   analyzeWebsiteTransparency,
+  ai_extract,
+  ai_findings,
+  ai_risks,
+  ai_compliance
 } from './server/gemini.ts';
 
 dotenv.config();
@@ -117,10 +136,17 @@ app.post('/api/hallazgos', (req: Request, res: Response) => {
     montoObservado,
     nivel,
     estado,
+    workflowStatus,
     recomendacion,
     conclusion,
     normativaReferencia,
     evidenciasAsociadas,
+    resultado,
+    fuenteExterna,
+    pagina,
+    articulo,
+    enlace,
+    fechaValidacion,
     user
   } = req.body;
 
@@ -144,10 +170,17 @@ app.post('/api/hallazgos', (req: Request, res: Response) => {
           montoObservado: montoObservado !== undefined ? Number(montoObservado) : data.hallazgos[idx].montoObservado,
           nivel: nivel || data.hallazgos[idx].nivel,
           estado: estado || data.hallazgos[idx].estado,
+          workflowStatus: (workflowStatus || data.hallazgos[idx].workflowStatus || 'BORRADOR') as WorkflowStatus,
           recomendacion: recomendacion ?? data.hallazgos[idx].recomendacion,
           conclusion: conclusion ?? data.hallazgos[idx].conclusion,
           normativaReferencia: normativaReferencia ?? data.hallazgos[idx].normativaReferencia,
           evidenciasAsociadas: evidenciasAsociadas ?? data.hallazgos[idx].evidenciasAsociadas,
+          resultado: resultado ?? data.hallazgos[idx].resultado,
+          fuenteExterna: fuenteExterna ?? data.hallazgos[idx].fuenteExterna,
+          pagina: pagina ?? data.hallazgos[idx].pagina,
+          articulo: articulo ?? data.hallazgos[idx].articulo,
+          enlace: enlace ?? data.hallazgos[idx].enlace,
+          fechaValidacion: fechaValidacion ?? data.hallazgos[idx].fechaValidacion,
           updatedAt: new Date().toISOString()
         };
         record = data.hallazgos[idx];
@@ -167,14 +200,30 @@ app.post('/api/hallazgos', (req: Request, res: Response) => {
         montoObservado: montoObservado ? Number(montoObservado) : 0,
         nivel: nivel || 'Medio',
         estado: estado || 'Abierto',
+        workflowStatus: (workflowStatus || 'BORRADOR') as WorkflowStatus,
         recomendacion: recomendacion || '',
         conclusion: conclusion || '',
         normativaReferencia: normativaReferencia || '',
         evidenciasAsociadas: evidenciasAsociadas || [],
+        resultado: resultado || '',
+        fuenteExterna: fuenteExterna || '',
+        pagina: pagina || '',
+        articulo: articulo || '',
+        enlace: enlace || '',
+        fechaValidacion: fechaValidacion || new Date().toISOString().split('T')[0],
         createdBy: user || 'admin',
         createdAt: new Date().toISOString()
       };
       data.hallazgos.unshift(record);
+
+      // Initialize workflow record
+      data.workflows.unshift({
+        id: data.workflows.length > 0 ? Math.max(...data.workflows.map(w => w.id)) + 1 : 1,
+        objectType: 'Hallazgo',
+        objectId: nextId,
+        status: (workflowStatus || 'BORRADOR') as WorkflowStatus,
+        comments: 'Hallazgo creado en borrador'
+      });
     }
   });
 
@@ -452,7 +501,7 @@ app.delete('/api/pagos/:id', (req: Request, res: Response) => {
 
 // --- EVIDENCIAS Y DOCUMENTOS ---
 app.post('/api/evidencias', (req: Request, res: Response) => {
-  const { expedienteId, nombreOriginal, sha256, tipo, tamano, textoExtraido, metadatos, user } = req.body;
+  const { expedienteId, nombreOriginal, sha256, tipo, tamano, textoExtraido, clasificacion, metadatos, user } = req.body;
   if (!nombreOriginal || !sha256) {
     return res.status(400).json({ error: 'Nombre original y hash SHA-256 son requeridos.' });
   }
@@ -471,11 +520,27 @@ app.post('/api/evidencias', (req: Request, res: Response) => {
       tipo: tipo || 'application/octet-stream',
       tamano: Number(tamano) || 0,
       textoExtraido: textoExtraido || '',
+      clasificacion: clasificacion || 'Extraído',
+      versionActual: 1,
+      workflowStatus: 'BORRADOR',
       metadatos: metadatos || {},
       subidoPor: user || 'admin',
       createdAt: new Date().toISOString()
     };
     data.evidencias.unshift(record);
+
+    // Initial version 1 in document_versions
+    data.documentVersions.unshift({
+      id: data.documentVersions.length > 0 ? Math.max(...data.documentVersions.map(v => v.id)) + 1 : 1,
+      evidenceId: nextId,
+      version: 1,
+      sha256,
+      fileName: nombreOriginal,
+      fileSize: Number(tamano) || 0,
+      changeNote: 'Carga inicial del documento',
+      createdAt: new Date().toISOString(),
+      createdBy: user || 'admin'
+    });
   });
 
   db.logActivity(user || 'admin', 'CARGAR_EVIDENCIA', `${nombreOriginal} (SHA256: ${sha256.slice(0, 12)}...)`);
@@ -487,9 +552,282 @@ app.delete('/api/evidencias/:id', (req: Request, res: Response) => {
   const user = String(req.query.user || 'admin');
   db.updateData(data => {
     data.evidencias = data.evidencias.filter(e => e.id !== id);
+    data.documentVersions = data.documentVersions.filter(dv => dv.evidenceId !== id);
+    data.findingsEvidence = data.findingsEvidence.filter(fe => fe.evidenceId !== id);
   });
   db.logActivity(user, 'ELIMINAR_EVIDENCIA', `Evidencia ID ${id}`);
   res.json({ success: true });
+});
+
+// --- WORKFLOW TRANSITIONS (DIAGNOSIS 8) ---
+app.post('/api/workflow/transition', (req: Request, res: Response) => {
+  const { objectType, objectId, newStatus, user, comments } = req.body;
+  if (!objectType || !objectId || !newStatus) {
+    return res.status(400).json({ error: 'objectType, objectId y newStatus son obligatorios.' });
+  }
+
+  let wfItem: WorkflowItem = null as any;
+  db.updateData(data => {
+    const numId = Number(objectId);
+    if (objectType === 'Hallazgo') {
+      const h = data.hallazgos.find(item => item.id === numId);
+      if (h) {
+        h.workflowStatus = newStatus as WorkflowStatus;
+        if (newStatus === 'APROBADO') h.estado = 'Cerrado';
+        else if (newStatus === 'REVISION') h.estado = 'En proceso';
+      }
+    } else if (objectType === 'Riesgo') {
+      const r = data.riesgos.find(item => item.id === numId);
+      if (r) {
+        r.workflowStatus = newStatus as WorkflowStatus;
+      }
+    } else if (objectType === 'Evidencia') {
+      const ev = data.evidencias.find(item => item.id === numId);
+      if (ev) {
+        ev.workflowStatus = newStatus as WorkflowStatus;
+        if (newStatus === 'APROBADO') ev.clasificacion = 'Aprobado';
+      }
+    }
+
+    const existingIdx = data.workflows.findIndex(w => w.objectType === objectType && w.objectId === numId);
+    if (existingIdx !== -1) {
+      data.workflows[existingIdx] = {
+        ...data.workflows[existingIdx],
+        status: newStatus as WorkflowStatus,
+        approvedBy: newStatus === 'APROBADO' ? (user || 'admin') : data.workflows[existingIdx].approvedBy,
+        approvedAt: newStatus === 'APROBADO' ? new Date().toISOString() : data.workflows[existingIdx].approvedAt,
+        comments: comments || data.workflows[existingIdx].comments
+      };
+      wfItem = data.workflows[existingIdx];
+    } else {
+      const nextId = data.workflows.length > 0 ? Math.max(...data.workflows.map(w => w.id)) + 1 : 1;
+      wfItem = {
+        id: nextId,
+        objectType,
+        objectId: numId,
+        status: newStatus as WorkflowStatus,
+        approvedBy: newStatus === 'APROBADO' ? (user || 'admin') : undefined,
+        approvedAt: newStatus === 'APROBADO' ? new Date().toISOString() : undefined,
+        comments: comments || ''
+      };
+      data.workflows.unshift(wfItem);
+    }
+  });
+
+  db.logActivity(user || 'admin', 'TRANSICION_WORKFLOW', `${objectType} #${objectId} pasó a estado ${newStatus}`);
+  res.json({ success: true, workflow: wfItem });
+});
+
+// --- FINDINGS EVIDENCE TRACEABILITY (DIAGNOSIS 1 & 5) ---
+app.post('/api/findings-evidence', (req: Request, res: Response) => {
+  const { id, findingId, evidenceId, page, paragraph, article, verified, notes, user } = req.body;
+  if (!findingId || !evidenceId) {
+    return res.status(400).json({ error: 'findingId y evidenceId son requeridos.' });
+  }
+
+  let record: FindingEvidence = null as any;
+  db.updateData(data => {
+    if (id) {
+      const idx = data.findingsEvidence.findIndex(fe => fe.id === Number(id));
+      if (idx !== -1) {
+        data.findingsEvidence[idx] = {
+          ...data.findingsEvidence[idx],
+          page: page ?? data.findingsEvidence[idx].page,
+          paragraph: paragraph ?? data.findingsEvidence[idx].paragraph,
+          article: article ?? data.findingsEvidence[idx].article,
+          verified: verified !== undefined ? Boolean(verified) : data.findingsEvidence[idx].verified,
+          notes: notes ?? data.findingsEvidence[idx].notes,
+        };
+        record = data.findingsEvidence[idx];
+      } else {
+        throw new Error('Registro de trazabilidad no encontrado');
+      }
+    } else {
+      const nextId = data.findingsEvidence.length > 0 ? Math.max(...data.findingsEvidence.map(fe => fe.id)) + 1 : 1;
+      record = {
+        id: nextId,
+        findingId: Number(findingId),
+        evidenceId: Number(evidenceId),
+        page: page || 'Pág. 1',
+        paragraph: paragraph || '',
+        article: article || '',
+        verified: Boolean(verified),
+        notes: notes || '',
+        createdAt: new Date().toISOString()
+      };
+      data.findingsEvidence.unshift(record);
+    }
+  });
+
+  db.logActivity(user || 'admin', 'VINCULAR_EVIDENCIA_HALLAZGO', `Hallazgo #${findingId} vinculado con Evidencia #${evidenceId} (${page || 'pág'})`);
+  res.json({ success: true, record });
+});
+
+app.delete('/api/findings-evidence/:id', (req: Request, res: Response) => {
+  const id = Number(req.params.id);
+  const user = String(req.query.user || 'admin');
+  db.updateData(data => {
+    data.findingsEvidence = data.findingsEvidence.filter(fe => fe.id !== id);
+  });
+  db.logActivity(user, 'DESVINCULAR_EVIDENCIA', `Vínculo de evidencia #${id} eliminado`);
+  res.json({ success: true });
+});
+
+// --- DOCUMENT VERSIONS (DIAGNOSIS 1) ---
+app.post('/api/document-versions', (req: Request, res: Response) => {
+  const { evidenceId, fileName, sha256, fileSize, changeNote, user } = req.body;
+  if (!evidenceId || !sha256) {
+    return res.status(400).json({ error: 'evidenceId y sha256 requeridos.' });
+  }
+
+  let newVer: DocumentVersion = null as any;
+  db.updateData(data => {
+    const existingVersions = data.documentVersions.filter(dv => dv.evidenceId === Number(evidenceId));
+    const nextVerNumber = existingVersions.length > 0 ? Math.max(...existingVersions.map(v => v.version)) + 1 : 1;
+    const nextId = data.documentVersions.length > 0 ? Math.max(...data.documentVersions.map(v => v.id)) + 1 : 1;
+    newVer = {
+      id: nextId,
+      evidenceId: Number(evidenceId),
+      version: nextVerNumber,
+      sha256,
+      fileName: fileName || 'archivo_actualizado',
+      fileSize: Number(fileSize) || 0,
+      changeNote: changeNote || `Versión ${nextVerNumber}`,
+      createdAt: new Date().toISOString(),
+      createdBy: user || 'admin'
+    };
+    data.documentVersions.unshift(newVer);
+
+    const ev = data.evidencias.find(e => e.id === Number(evidenceId));
+    if (ev) {
+      ev.versionActual = nextVerNumber;
+      ev.sha256 = sha256;
+      if (fileName) ev.nombreOriginal = fileName;
+    }
+  });
+
+  db.logActivity(user || 'admin', 'CREAR_VERSION_DOCUMENTO', `Nueva versión v${newVer.version} para Evidencia #${evidenceId}`);
+  res.json({ success: true, version: newVer });
+});
+
+// --- NORMATIVE CATALOG CRUD (DIAGNOSIS 1 & 7) ---
+app.post('/api/normative-catalog', (req: Request, res: Response) => {
+  const { id, country, authority, title, article, version, sourceUrl, effectiveDate, status, resumen, user } = req.body;
+  if (!title) {
+    return res.status(400).json({ error: 'El título de la norma es obligatorio.' });
+  }
+
+  let item: NormativeCatalogItem = null as any;
+  db.updateData(data => {
+    if (id) {
+      const idx = data.normativeCatalog.findIndex(nc => nc.id === Number(id));
+      if (idx !== -1) {
+        data.normativeCatalog[idx] = {
+          ...data.normativeCatalog[idx],
+          country: country || data.normativeCatalog[idx].country,
+          authority: authority || data.normativeCatalog[idx].authority,
+          title,
+          article: article || data.normativeCatalog[idx].article,
+          version: version || data.normativeCatalog[idx].version,
+          sourceUrl: sourceUrl || data.normativeCatalog[idx].sourceUrl,
+          effectiveDate: effectiveDate || data.normativeCatalog[idx].effectiveDate,
+          status: status || data.normativeCatalog[idx].status,
+          resumen: resumen ?? data.normativeCatalog[idx].resumen,
+        };
+        item = data.normativeCatalog[idx];
+      } else {
+        throw new Error('Norma no encontrada');
+      }
+    } else {
+      const nextId = data.normativeCatalog.length > 0 ? Math.max(...data.normativeCatalog.map(nc => nc.id)) + 1 : 1;
+      item = {
+        id: nextId,
+        country: country || 'República Dominicana',
+        authority: authority || 'DGCP',
+        title,
+        article: article || '',
+        version: version || '1.0',
+        sourceUrl: sourceUrl || '',
+        effectiveDate: effectiveDate || new Date().toISOString().split('T')[0],
+        status: status || 'Vigente',
+        resumen: resumen || ''
+      };
+      data.normativeCatalog.unshift(item);
+    }
+  });
+
+  db.logActivity(user || 'admin', id ? 'ACTUALIZAR_CATALOGO_NORMATIVO' : 'CREAR_CATALOGO_NORMATIVO', `${title} (${country})`);
+  res.json({ success: true, item });
+});
+
+app.delete('/api/normative-catalog/:id', (req: Request, res: Response) => {
+  const id = Number(req.params.id);
+  const user = String(req.query.user || 'admin');
+  db.updateData(data => {
+    data.normativeCatalog = data.normativeCatalog.filter(nc => nc.id !== id);
+  });
+  db.logActivity(user, 'ELIMINAR_NORMA_CATALOGO', `Norma ID ${id}`);
+  res.json({ success: true });
+});
+
+// --- SETTINGS INTERNATIONALIZATION (DIAGNOSIS 1) ---
+app.post('/api/settings', (req: Request, res: Response) => {
+  const { language, country, currency, dateFormat, user } = req.body;
+  let currentSettings: AppSettings = null as any;
+  db.updateData(data => {
+    data.settings = {
+      ...data.settings,
+      language: language || data.settings.language,
+      country: country || data.settings.country,
+      currency: currency || data.settings.currency,
+      dateFormat: dateFormat || data.settings.dateFormat,
+    };
+    currentSettings = data.settings;
+  });
+
+  db.logActivity(user || 'admin', 'ACTUALIZAR_CONFIGURACION', `País: ${country}, Moneda: ${currency}`);
+  res.json({ success: true, settings: currentSettings });
+});
+
+// --- ENTERPRISE AI ENDPOINTS (DIAGNOSIS 9) ---
+app.post('/api/ai/extract', async (req: Request, res: Response) => {
+  const { text, fileName } = req.body;
+  try {
+    const out = await ai_extract(text || '', fileName);
+    res.json({ success: true, result: out });
+  } catch (err: any) {
+    res.status(500).json({ error: err.message });
+  }
+});
+
+app.post('/api/ai/findings', async (req: Request, res: Response) => {
+  const { observation, monto, context } = req.body;
+  try {
+    const out = await ai_findings(observation || '', monto, context);
+    res.json({ success: true, result: out });
+  } catch (err: any) {
+    res.status(500).json({ error: err.message });
+  }
+});
+
+app.post('/api/ai/risks', async (req: Request, res: Response) => {
+  const { contextText } = req.body;
+  try {
+    const out = await ai_risks(contextText || '');
+    res.json({ success: true, result: out });
+  } catch (err: any) {
+    res.status(500).json({ error: err.message });
+  }
+});
+
+app.post('/api/ai/compliance', async (req: Request, res: Response) => {
+  const { criterioText, authority } = req.body;
+  try {
+    const out = await ai_compliance(criterioText || '', authority);
+    res.json({ success: true, result: out });
+  } catch (err: any) {
+    res.status(500).json({ error: err.message });
+  }
 });
 
 // --- GEMINI AI AUDITOR ENDPOINTS ---

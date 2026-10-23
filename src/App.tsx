@@ -14,7 +14,23 @@ import { NormativaView } from './components/NormativaView';
 import { ReportesExportView } from './components/ReportesExportView';
 import { DesktopPackageView } from './components/DesktopPackageView';
 import { SeguridadView } from './components/SeguridadView';
-import { DatabaseState, Expediente, Hallazgo, Riesgo, Proveedor, Contrato, Pago, Evidencia } from './types';
+import { WorkflowView } from './components/WorkflowView';
+import { MatrixEngineView } from './components/MatrixEngineView';
+import { ComplianceCatalogView } from './components/ComplianceCatalogView';
+import { SettingsView } from './components/SettingsView';
+import {
+  DatabaseState,
+  Expediente,
+  Hallazgo,
+  Riesgo,
+  Proveedor,
+  Contrato,
+  Pago,
+  Evidencia,
+  NormativeCatalogItem,
+  AppSettings,
+  WorkflowStatus
+} from './types';
 import { api } from './services/api';
 import { exportService } from './services/exportService';
 
@@ -140,6 +156,37 @@ export default function App() {
     await loadData();
   };
 
+  const handleTransitionWorkflow = async (
+    objectType: 'Hallazgo' | 'Riesgo' | 'Evidencia' | 'Informe',
+    objectId: number,
+    newStatus: WorkflowStatus,
+    comments?: string
+  ) => {
+    await api.transitionWorkflow({
+      objectType,
+      objectId,
+      newStatus,
+      user: currentUser,
+      comments,
+    });
+    await loadData();
+  };
+
+  const handleSaveNormative = async (item: Partial<NormativeCatalogItem> & { user: string }) => {
+    await api.saveNormativeCatalog(item);
+    await loadData();
+  };
+
+  const handleDeleteNormative = async (id: number, user: string) => {
+    await api.deleteNormativeCatalog(id, user);
+    await loadData();
+  };
+
+  const handleUpdateSettings = async (settings: Partial<AppSettings> & { user: string }) => {
+    await api.updateSettings(settings);
+    await loadData();
+  };
+
   const handleSendToAiAuditor = (text: string, title?: string) => {
     setAiAuditorPreset({ text, title: title || 'Evidencia analizada' });
     setActiveTab('ia-auditor');
@@ -163,6 +210,11 @@ export default function App() {
   const riesgosCriticos = data.riesgos.filter(r => r.nivel === 'Crítico').length;
   const pagosDuplicados = data.pagos.filter(p => p.alertaDuplicado).length;
 
+  const workflowPending =
+    data.hallazgos.filter(h => h.workflowStatus === 'PENDIENTE' || h.workflowStatus === 'REVISION').length +
+    data.riesgos.filter(r => r.workflowStatus === 'PENDIENTE' || r.workflowStatus === 'REVISION').length +
+    data.evidencias.filter(e => e.workflowStatus === 'PENDIENTE' || e.workflowStatus === 'REVISION').length;
+
   return (
     <div className="min-h-screen bg-slate-950 text-slate-100 flex flex-col font-sans selection:bg-blue-600 selection:text-white">
       {/* Top Global Header */}
@@ -183,6 +235,7 @@ export default function App() {
           hallazgosCount={data.hallazgos.length}
           riesgosCriticosCount={riesgosCriticos}
           pagosDuplicadosCount={pagosDuplicados}
+          workflowPendingCount={workflowPending}
         />
 
         {/* Main Content Workspace */}
@@ -235,6 +288,21 @@ export default function App() {
               />
             )}
 
+            {activeTab === 'workflow' && (
+              <WorkflowView
+                data={data}
+                currentUser={currentUser}
+                onTransitionWorkflow={handleTransitionWorkflow}
+              />
+            )}
+
+            {activeTab === 'matrices' && (
+              <MatrixEngineView
+                data={data}
+                selectedExpedienteId={selectedExpedienteId}
+              />
+            )}
+
             {activeTab === 'riesgos' && (
               <RiesgosView
                 data={data}
@@ -264,6 +332,15 @@ export default function App() {
 
             {activeTab === 'web-audit' && <WebAuditView />}
 
+            {activeTab === 'catalogo-normativo' && (
+              <ComplianceCatalogView
+                data={data}
+                currentUser={currentUser}
+                onSaveNormative={handleSaveNormative}
+                onDeleteNormative={handleDeleteNormative}
+              />
+            )}
+
             {activeTab === 'normativas' && <NormativaView data={data} />}
 
             {activeTab === 'reportes' && (
@@ -279,6 +356,15 @@ export default function App() {
               <SeguridadView
                 data={data}
                 currentUser={currentUser}
+                onResetSample={handleResetSample}
+              />
+            )}
+
+            {activeTab === 'settings' && (
+              <SettingsView
+                data={data}
+                currentUser={currentUser}
+                onUpdateSettings={handleUpdateSettings}
                 onResetSample={handleResetSample}
               />
             )}

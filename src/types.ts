@@ -1,3 +1,5 @@
+export type WorkflowStatus = 'BORRADOR' | 'PENDIENTE' | 'REVISION' | 'APROBADO' | 'RECHAZADO' | 'CERRADO';
+
 export interface Expediente {
   id: number;
   codigo: string;
@@ -23,10 +25,18 @@ export interface Hallazgo {
   montoObservado?: number;
   nivel: 'Crítico' | 'Alto' | 'Medio' | 'Bajo';
   estado: 'Abierto' | 'En proceso' | 'Subsanado' | 'Cerrado';
+  workflowStatus: WorkflowStatus;
   recomendacion: string;
   conclusion?: string;
   normativaReferencia?: string;
   evidenciasAsociadas?: string[];
+  // Campos de trazabilidad avanzada
+  resultado?: string;
+  fuenteExterna?: string;
+  pagina?: string;
+  articulo?: string;
+  enlace?: string;
+  fechaValidacion?: string;
   createdBy: string;
   createdAt: string;
   updatedAt?: string;
@@ -43,6 +53,7 @@ export interface Riesgo {
   nivel: 'Crítico' | 'Alto' | 'Medio' | 'Bajo';
   mitigacion: string;
   estado: 'Pendiente' | 'En mitigación' | 'Controlado';
+  workflowStatus?: WorkflowStatus;
   createdAt: string;
 }
 
@@ -93,15 +104,74 @@ export interface Evidencia {
   tipo: string;
   tamano: number;
   textoExtraido: string;
+  clasificacion: 'Extraído' | 'Verificado' | 'Propuesto' | 'Aprobado';
+  versionActual: number;
+  workflowStatus?: WorkflowStatus;
   metadatos?: {
     rnc?: string[];
     montos?: string[];
     fechas?: string[];
     ncf?: string[];
     firmasDetectadas?: boolean;
+    ocrReal?: boolean;
   };
   subidoPor: string;
   createdAt: string;
+}
+
+export interface DocumentVersion {
+  id: number;
+  evidenceId: number;
+  version: number;
+  sha256: string;
+  fileName: string;
+  fileSize: number;
+  changeNote?: string;
+  createdAt: string;
+  createdBy: string;
+}
+
+export interface FindingEvidence {
+  id: number;
+  findingId: number;
+  evidenceId: number;
+  page: string;
+  paragraph: string;
+  article: string;
+  verified: boolean;
+  notes?: string;
+  createdAt: string;
+}
+
+export interface NormativeCatalogItem {
+  id: number;
+  country: string;
+  authority: string;
+  title: string;
+  article: string;
+  version: string;
+  sourceUrl: string;
+  effectiveDate: string;
+  status: 'Vigente' | 'Derogada' | 'En Modificación';
+  resumen?: string;
+}
+
+export interface WorkflowItem {
+  id: number;
+  objectType: 'Hallazgo' | 'Riesgo' | 'Evidencia' | 'Informe';
+  objectId: number;
+  status: WorkflowStatus;
+  approvedBy?: string;
+  approvedAt?: string;
+  comments?: string;
+}
+
+export interface AppSettings {
+  id: number;
+  language: string; // 'es' | 'en'
+  country: string; // 'República Dominicana' | 'USA' | 'Internacional'
+  currency: string; // 'DOP' | 'USD' | 'EUR'
+  dateFormat: string; // 'DD/MM/YYYY' | 'YYYY-MM-DD'
 }
 
 export interface Actividad {
@@ -133,6 +203,11 @@ export interface DatabaseState {
   contratos: Contrato[];
   pagos: Pago[];
   evidencias: Evidencia[];
+  documentVersions: DocumentVersion[];
+  findingsEvidence: FindingEvidence[];
+  normativeCatalog: NormativeCatalogItem[];
+  workflows: WorkflowItem[];
+  settings: AppSettings;
   actividad: Actividad[];
   normativas: Normativa[];
 }

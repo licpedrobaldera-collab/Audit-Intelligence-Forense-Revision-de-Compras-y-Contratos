@@ -1,4 +1,18 @@
-import { DatabaseState, Expediente, Hallazgo, Riesgo, Proveedor, Contrato, Pago, Evidencia } from '../types';
+import {
+  DatabaseState,
+  Expediente,
+  Hallazgo,
+  Riesgo,
+  Proveedor,
+  Contrato,
+  Pago,
+  Evidencia,
+  FindingEvidence,
+  DocumentVersion,
+  NormativeCatalogItem,
+  AppSettings,
+  WorkflowStatus
+} from '../types';
 
 export const api = {
   async getAll(): Promise<DatabaseState> {
@@ -16,6 +30,7 @@ export const api = {
     return res.json();
   },
 
+  // Expedientes
   async saveExpediente(data: Partial<Expediente> & { user: string }): Promise<{ success: boolean; record: Expediente }> {
     const res = await fetch('/api/expedientes', {
       method: 'POST',
@@ -34,6 +49,7 @@ export const api = {
     return res.json();
   },
 
+  // Hallazgos
   async saveHallazgo(data: Partial<Hallazgo> & { user: string }): Promise<{ success: boolean; record: Hallazgo }> {
     const res = await fetch('/api/hallazgos', {
       method: 'POST',
@@ -52,6 +68,7 @@ export const api = {
     return res.json();
   },
 
+  // Riesgos
   async saveRiesgo(data: Partial<Riesgo> & { user: string }): Promise<{ success: boolean; record: Riesgo }> {
     const res = await fetch('/api/riesgos', {
       method: 'POST',
@@ -70,6 +87,7 @@ export const api = {
     return res.json();
   },
 
+  // Proveedores
   async saveProveedor(data: Partial<Proveedor> & { user: string }): Promise<{ success: boolean; record: Proveedor }> {
     const res = await fetch('/api/proveedores', {
       method: 'POST',
@@ -88,6 +106,7 @@ export const api = {
     return res.json();
   },
 
+  // Contratos
   async saveContrato(data: Partial<Contrato> & { user: string }): Promise<{ success: boolean; record: Contrato }> {
     const res = await fetch('/api/contratos', {
       method: 'POST',
@@ -106,6 +125,7 @@ export const api = {
     return res.json();
   },
 
+  // Pagos
   async savePago(data: Partial<Pago> & { user: string }): Promise<{ success: boolean; record: Pago; alertaDuplicado: boolean }> {
     const res = await fetch('/api/pagos', {
       method: 'POST',
@@ -124,6 +144,7 @@ export const api = {
     return res.json();
   },
 
+  // Evidencias
   async saveEvidencia(data: Partial<Evidencia> & { user: string }): Promise<{ success: boolean; record: Evidencia }> {
     const res = await fetch('/api/evidencias', {
       method: 'POST',
@@ -142,6 +163,127 @@ export const api = {
     return res.json();
   },
 
+  // Document Versions (Diagnosis 1)
+  async saveDocumentVersion(data: {
+    evidenceId: number;
+    fileName: string;
+    sha256: string;
+    fileSize: number;
+    changeNote?: string;
+    user: string;
+  }): Promise<{ success: boolean; version: DocumentVersion }> {
+    const res = await fetch('/api/document-versions', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify(data),
+    });
+    return res.json();
+  },
+
+  // Findings Evidence Traceability (Diagnosis 1 & 5)
+  async saveFindingEvidence(data: {
+    id?: number;
+    findingId: number;
+    evidenceId: number;
+    page: string;
+    paragraph?: string;
+    article?: string;
+    verified?: boolean;
+    notes?: string;
+    user: string;
+  }): Promise<{ success: boolean; record: FindingEvidence }> {
+    const res = await fetch('/api/findings-evidence', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify(data),
+    });
+    return res.json();
+  },
+
+  async deleteFindingEvidence(id: number, user: string): Promise<{ success: boolean }> {
+    const res = await fetch(`/api/findings-evidence/${id}?user=${encodeURIComponent(user)}`, { method: 'DELETE' });
+    return res.json();
+  },
+
+  // Workflow (Diagnosis 8)
+  async transitionWorkflow(data: {
+    objectType: 'Hallazgo' | 'Riesgo' | 'Evidencia' | 'Informe';
+    objectId: number;
+    newStatus: WorkflowStatus;
+    user: string;
+    comments?: string;
+  }): Promise<{ success: boolean; workflow: any }> {
+    const res = await fetch('/api/workflow/transition', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify(data),
+    });
+    return res.json();
+  },
+
+  // Normative Catalog (Diagnosis 1 & 7)
+  async saveNormativeCatalog(data: Partial<NormativeCatalogItem> & { user: string }): Promise<{ success: boolean; item: NormativeCatalogItem }> {
+    const res = await fetch('/api/normative-catalog', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify(data),
+    });
+    return res.json();
+  },
+
+  async deleteNormativeCatalog(id: number, user: string): Promise<{ success: boolean }> {
+    const res = await fetch(`/api/normative-catalog/${id}?user=${encodeURIComponent(user)}`, { method: 'DELETE' });
+    return res.json();
+  },
+
+  // Settings (Diagnosis 1)
+  async updateSettings(data: Partial<AppSettings> & { user: string }): Promise<{ success: boolean; settings: AppSettings }> {
+    const res = await fetch('/api/settings', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify(data),
+    });
+    return res.json();
+  },
+
+  // Enterprise AI Methods (Diagnosis 9)
+  async aiExtract(text: string, fileName?: string): Promise<any> {
+    const res = await fetch('/api/ai/extract', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ text, fileName }),
+    });
+    return res.json();
+  },
+
+  async aiFindings(observation: string, monto?: number, context?: string): Promise<any> {
+    const res = await fetch('/api/ai/findings', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ observation, monto, context }),
+    });
+    return res.json();
+  },
+
+  async aiRisks(contextText: string): Promise<any> {
+    const res = await fetch('/api/ai/risks', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ contextText }),
+    });
+    return res.json();
+  },
+
+  async aiCompliance(criterioText: string, authority?: string): Promise<any> {
+    const res = await fetch('/api/ai/compliance', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ criterioText, authority }),
+    });
+    return res.json();
+  },
+
+  // General AI calls
   async analyzeText(text: string, fileName?: string, user = 'admin'): Promise<any> {
     const res = await fetch('/api/audit/analyze-text', {
       method: 'POST',
