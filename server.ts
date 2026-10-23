@@ -16,7 +16,8 @@ import {
   NormativeCatalogItem,
   WorkflowItem,
   AppSettings,
-  WorkflowStatus
+  WorkflowStatus,
+  CustomPlugin
 } from './server/db.ts';
 import {
   analyzeDocumentWithGemini,
@@ -26,7 +27,10 @@ import {
   ai_extract,
   ai_findings,
   ai_risks,
-  ai_compliance
+  ai_compliance,
+  crossAuditWithRectors,
+  autoProgramFunction,
+  multiTurnAuditChat
 } from './server/gemini.ts';
 
 dotenv.config();
@@ -892,6 +896,232 @@ app.post('/api/audit/analyze-website', async (req: Request, res: Response) => {
   } catch (err: any) {
     console.error('Error in website analysis:', err);
     res.status(500).json({ error: 'Error auditando portal web', details: err.message });
+  }
+});
+
+// --- CROSS-AUDIT VS RECTOR ORGANS & GOOGLE SEARCH GROUNDING ---
+app.post('/api/ai/cross-audit', async (req: Request, res: Response) => {
+  const { auditType, entityName, entityDataOrUrl, rectorDataOrUrls, useGoogleSearch, user } = req.body;
+  if (!entityName || !entityDataOrUrl) {
+    return res.status(400).json({ error: 'El nombre de la entidad y los datos o enlace a contrastar son obligatorios.' });
+  }
+
+  try {
+    const result = await crossAuditWithRectors({
+      auditType: auditType || 'Compras',
+      entityName,
+      entityDataOrUrl,
+      rectorDataOrUrls: rectorDataOrUrls || {},
+      useGoogleSearch: useGoogleSearch !== false
+    });
+
+    db.logActivity(
+      user || 'admin',
+      'CRUCE_ORGANOS_RECTORES',
+      `Cruce pericial de ${auditType} para ${entityName}: ${result.discrepancias?.length || 0} discrepancias, ${result.hallazgosDetectados?.length || 0} hallazgos`
+    );
+
+    res.json({ success: true, result });
+  } catch (err: any) {
+    console.error('Error in cross-audit:', err);
+    res.status(500).json({ error: 'Error en cruce pericial con órganos rectores', details: err.message });
+  }
+});
+
+// Save Cross-Audit Findings & Evidence automatically into active dossier
+app.post('/api/ai/cross-audit/save-findings', (req: Request, res: Response) => {
+  const { expedienteId, hallazgos, evidencias, user } = req.body;
+  if (!Array.isArray(hallazgos)) {
+    return res.status(400).json({ error: 'Lista de hallazgos requerida.' });
+  }
+
+  const expId = expedienteId ? Number(expedienteId) : null;
+  const createdHallazgos: Hallazgo[] = [];
+  const createdEvidencias: Evidencia[] = [];
+
+  db.updateData(data => {
+    // Save hallazgos
+    hallazgos.forEach(h => {
+      const nextHId = data.hallazgos.length > 0 ? Math.max(...data.hallazgos.map(x => x.id)) + 1 : 1;
+      const newHallazgo: Hallazgo = {
+        id: nextHId,
+        expedienteId: expId,
+        titulo: h.titulo || 'Hallazgo de cruce con órgano rector',
+        condicion: h.condicion || '',
+        criterio: h.criterio || '',
+        causa: h.causa || '',
+        efecto: h.efecto || '',
+        montoObservado: h.montoObservado ? Number(h.montoObservado) : 0,
+        nivel: h.nivel || 'Medio',
+        estado: 'Abierto',
+        workflowStatus: 'BORRADOR',
+        recomendacion: h.recomendacion || '',
+        conclusion: h.conclusion || '',
+        normativaReferencia: h.normativaReferencia || '',
+        resultado: `Observación derivada de cruce con órganos rectores. Monto: RD$ ${(h.montoObservado || 0).toLocaleString()}`,
+        fuenteExterna: 'Portal Transparencia / Órgano Rector',
+        pagina: 'Consulta Oficial en Línea',
+        articulo: h.normativaReferencia || 'Ley 340-06 / Ley 10-04',
+        enlace: 'https://comprasdominicana.gob.do',
+        fechaValidacion: new Date().toISOString().split('T')[0],
+        createdBy: user || 'admin',
+        createdAt: new Date().toISOString()
+      };
+      data.hallazgos.unshift(newHallazgo);
+      createdHallazgos.push(newHallazgo);
+    });
+
+    // Save evidences
+    if (Array.isArray(evidencias)) {
+      evidencias.forEach(ev => {
+        const nextEId = data.evidencias.length > 0 ? Math.max(...data.evidencias.map(x => x.id)) + 1 : 1;
+        const newEvidencia: Evidencia = {
+          id: nextEId,
+          expedienteId: expId,
+          nombreOriginal: `${ev.fuente || 'Evidencia_Cruce'}.txt`,
+          nombreGuardado: `cross_evidence_${nextEId}.txt`,
+          ruta: `/uploads/cross_evidence_${nextEId}.txt`,
+          sha256: ev.sha256 || '0000000000000000000000000000000000000000000000000000000000000000',
+          tipo: 'text/plain',
+          tamano: (ev.extracto || '').length,
+          textoExtraido: ev.extracto || '',
+          clasificacion: 'Verificado',
+          versionActual: 1,
+          workflowStatus: 'BORRADOR',
+          metadatos: {
+            fechas: [ev.fechaConsulta || new Date().toISOString()],
+            firmasDetectadas: false
+          },
+          subidoPor: user || 'admin',
+          createdAt: new Date().toISOString()
+        };
+        data.evidencias.unshift(newEvidencia);
+        createdEvidencias.push(newEvidencia);
+      });
+    }
+  });
+
+  db.logActivity(
+    user || 'admin',
+    'GUARDAR_HALLAZGOS_CRUCE',
+    `Guardados ${createdHallazgos.length} hallazgos y ${createdEvidencias.length} evidencias en expediente #${expId || 'General'}`
+  );
+
+  res.json({
+    success: true,
+    savedHallazgosCount: createdHallazgos.length,
+    savedEvidenciasCount: createdEvidencias.length,
+    createdHallazgos
+  });
+});
+
+// --- AUTOPROGRAMMER & EXTENSION ENGINE ---
+app.post('/api/ai/auto-program', async (req: Request, res: Response) => {
+  const { templateOrPrompt, user } = req.body;
+  if (!templateOrPrompt) {
+    return res.status(400).json({ error: 'La plantilla o requerimiento de autoprogramación es requerido.' });
+  }
+
+  try {
+    const pluginDraft = await autoProgramFunction({
+      templateOrPrompt,
+      userRole: user || 'admin'
+    });
+
+    res.json({ success: true, pluginDraft });
+  } catch (err: any) {
+    console.error('Error in auto-program:', err);
+    res.status(500).json({ error: 'Error autoprogramando función', details: err.message });
+  }
+});
+
+// Custom Plugins CRUD
+app.post('/api/custom-plugins', (req: Request, res: Response) => {
+  const { id, nombre, codigo, descripcion, categoria, organosRectores, dependencias, scriptSource, parametrosEntrada, reglasValidacion, activo, user } = req.body;
+  if (!nombre || !codigo) {
+    return res.status(400).json({ error: 'Nombre y código son obligatorios.' });
+  }
+
+  let record: CustomPlugin = null as any;
+  db.updateData(data => {
+    if (!data.customPlugins) data.customPlugins = [];
+
+    if (id) {
+      const idx = data.customPlugins.findIndex(p => p.id === Number(id));
+      if (idx !== -1) {
+        data.customPlugins[idx] = {
+          ...data.customPlugins[idx],
+          nombre,
+          codigo,
+          descripcion: descripcion || '',
+          categoria: categoria || 'Especial',
+          organosRectores: organosRectores || [],
+          dependencias: dependencias || [],
+          scriptSource: scriptSource || '',
+          parametrosEntrada: parametrosEntrada || [],
+          reglasValidacion: reglasValidacion || [],
+          activo: activo !== undefined ? Boolean(activo) : true
+        };
+        record = data.customPlugins[idx];
+      } else {
+        throw new Error('Módulo no encontrado');
+      }
+    } else {
+      const nextId = data.customPlugins.length > 0 ? Math.max(...data.customPlugins.map(p => p.id)) + 1 : 1;
+      record = {
+        id: nextId,
+        nombre,
+        codigo,
+        descripcion: descripcion || '',
+        categoria: categoria || 'Especial',
+        organosRectores: organosRectores || [],
+        dependencias: dependencias || [],
+        scriptSource: scriptSource || '',
+        parametrosEntrada: parametrosEntrada || [],
+        reglasValidacion: reglasValidacion || [],
+        activo: activo !== undefined ? Boolean(activo) : true,
+        createdBy: user || 'admin',
+        createdAt: new Date().toISOString()
+      };
+      data.customPlugins.unshift(record);
+    }
+  });
+
+  db.logActivity(user || 'admin', id ? 'ACTUALIZAR_PLUGIN_AUTONOMO' : 'REGISTRAR_PLUGIN_AUTONOMO', `${nombre} (${codigo})`);
+  res.json({ success: true, record });
+});
+
+app.delete('/api/custom-plugins/:id', (req: Request, res: Response) => {
+  const id = Number(req.params.id);
+  const user = String(req.query.user || 'admin');
+  db.updateData(data => {
+    if (data.customPlugins) {
+      data.customPlugins = data.customPlugins.filter(p => p.id !== id);
+    }
+  });
+  db.logActivity(user, 'ELIMINAR_PLUGIN_AUTONOMO', `Módulo ID ${id}`);
+  res.json({ success: true });
+});
+
+// --- MULTI-TURN AUDIT CHATBOT (FEATURE BLOCK) ---
+app.post('/api/ai/chat', async (req: Request, res: Response) => {
+  const { messages, auditorRole, useGoogleSearch, user } = req.body;
+  if (!Array.isArray(messages) || messages.length === 0) {
+    return res.status(400).json({ error: 'Historial de mensajes requerido.' });
+  }
+
+  try {
+    const result = await multiTurnAuditChat({
+      messages,
+      auditorRole: auditorRole || 'forense',
+      useGoogleSearch: useGoogleSearch !== false
+    });
+
+    db.logActivity(user || 'admin', 'CONSULTA_CHATBOT_PERICIAL', `Consulta sobre rol ${auditorRole}`);
+    res.json({ success: true, ...result });
+  } catch (err: any) {
+    console.error('Error in audit chat:', err);
+    res.status(500).json({ error: 'Error en chat pericial', details: err.message });
   }
 });
 

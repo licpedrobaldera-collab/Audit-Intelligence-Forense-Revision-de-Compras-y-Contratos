@@ -18,6 +18,9 @@ import { WorkflowView } from './components/WorkflowView';
 import { MatrixEngineView } from './components/MatrixEngineView';
 import { ComplianceCatalogView } from './components/ComplianceCatalogView';
 import { SettingsView } from './components/SettingsView';
+import { CrossRectorAuditView } from './components/CrossRectorAuditView';
+import { AutoProgrammerView } from './components/AutoProgrammerView';
+import { AuditChatbotView } from './components/AuditChatbotView';
 import {
   DatabaseState,
   Expediente,
@@ -259,6 +262,17 @@ export default function App() {
               />
             )}
 
+            {activeTab === 'cruce-rectores' && (
+              <CrossRectorAuditView
+                data={data}
+                selectedExpedienteId={selectedExpedienteId}
+                currentUser={currentUser}
+                onRefreshData={loadData}
+              />
+            )}
+
+            {activeTab === 'chat-ia' && <AuditChatbotView />}
+
             {activeTab === 'documentos' && (
               <DocumentosOcrView
                 data={data}
@@ -331,6 +345,14 @@ export default function App() {
             )}
 
             {activeTab === 'web-audit' && <WebAuditView />}
+
+            {activeTab === 'autoprogramador' && (
+              <AutoProgrammerView
+                data={data}
+                currentUser={currentUser}
+                onRefreshData={loadData}
+              />
+            )}
 
             {activeTab === 'catalogo-normativo' && (
               <ComplianceCatalogView

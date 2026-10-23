@@ -198,6 +198,22 @@ export interface Normativa {
   }[];
 }
 
+export interface CustomPlugin {
+  id: number;
+  nombre: string;
+  codigo: string;
+  descripcion: string;
+  categoria: 'Compras' | 'Financiero' | 'Activos' | 'Nomina' | 'Especial' | 'Tributario';
+  organosRectores: string[];
+  dependencias: string[];
+  scriptSource: string;
+  parametrosEntrada: Array<{ nombre: string; tipo: string; descripcion: string }>;
+  reglasValidacion: string[];
+  activo: boolean;
+  createdBy: string;
+  createdAt: string;
+}
+
 export interface DatabaseSchema {
   expedientes: Expediente[];
   hallazgos: Hallazgo[];
@@ -213,6 +229,7 @@ export interface DatabaseSchema {
   settings: AppSettings;
   actividad: Actividad[];
   normativas: Normativa[];
+  customPlugins: CustomPlugin[];
 }
 
 const DB_DIR = path.resolve(process.cwd(), 'database');
@@ -777,6 +794,52 @@ function getInitialData(): DatabaseSchema {
           }
         ]
       }
+    ],
+    customPlugins: [
+      {
+        id: 1,
+        nombre: 'Cruce de Subvenciones a ONGs vs CASFL y SIGEF',
+        codigo: 'PLUG-CASFL-01',
+        descripcion: 'Verificación de transferencias del Estado a asociaciones sin fines de lucro con habilitación en el Centro Nacional de Fomento (CASFL) y libramientos en Hacienda.',
+        categoria: 'Especial',
+        organosRectores: ['CASFL / MEPyD', 'Ministerio de Hacienda / SIGEF', 'Cámara de Cuentas'],
+        dependencias: ['xlsx', 'axios'],
+        scriptSource: '// Módulo pericial de verificación de habilitación sectorial y rendición de cuentas de ASFL',
+        parametrosEntrada: [
+          { nombre: 'rncOng', tipo: 'string', descripcion: 'RNC de la organización sin fines de lucro' },
+          { nombre: 'montoSubvencion', tipo: 'number', descripcion: 'Monto transferido en el ejercicio' }
+        ],
+        reglasValidacion: [
+          'Verificar estatus de Habilitación Sectorial vigente en CASFL',
+          'Validar rendición de cuentas semestral ante la Cámara de Cuentas',
+          'Comprobar cuenta bancaria exclusiva para fondos públicos'
+        ],
+        activo: true,
+        createdBy: 'admin',
+        createdAt: '2026-01-15T08:00:00Z'
+      },
+      {
+        id: 2,
+        nombre: 'Auditoría de Combustible vs SIGEF y Matrícula Vehicular',
+        codigo: 'PLUG-FUEL-02',
+        descripcion: 'Cotejo de tickets y tarjetas de combustible institucional contra el parque vehicular oficial registrado en Bienes Nacionales y la DGII.',
+        categoria: 'Activos',
+        organosRectores: ['Dirección General de Bienes Nacionales', 'DGII', 'Contraloría'],
+        dependencias: ['xlsx'],
+        scriptSource: '// Módulo de cruce de consumo kilométrico vs asignación de cupones de combustible',
+        parametrosEntrada: [
+          { nombre: 'placaVehiculo', tipo: 'string', descripcion: 'Número de placa oficial' },
+          { nombre: 'litrosDespachados', tipo: 'number', descripcion: 'Cantidad de galones / litros registrados' }
+        ],
+        reglasValidacion: [
+          'Vehículo debe estar matriculado a nombre de la institución en DGII',
+          'Bitácora de ruta firmada por chofer y supervisor',
+          'Rendimiento no menor al umbral de 18 km/galón según modelo'
+        ],
+        activo: true,
+        createdBy: 'admin',
+        createdAt: '2026-01-15T08:00:00Z'
+      }
     ]
   };
 }
@@ -804,6 +867,7 @@ class DatabaseManager {
           if (!parsed.normativeCatalog) parsed.normativeCatalog = initial.normativeCatalog;
           if (!parsed.workflows) parsed.workflows = initial.workflows;
           if (!parsed.settings) parsed.settings = initial.settings;
+          if (!parsed.customPlugins) parsed.customPlugins = initial.customPlugins;
 
           // Ensure hallazgos have workflowStatus
           parsed.hallazgos.forEach((h: any) => {

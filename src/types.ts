@@ -195,6 +195,77 @@ export interface Normativa {
   }[];
 }
 
+export interface CustomPlugin {
+  id: number;
+  nombre: string;
+  codigo: string;
+  descripcion: string;
+  categoria: 'Compras' | 'Financiero' | 'Activos' | 'Nomina' | 'Especial' | 'Tributario';
+  organosRectores: string[];
+  dependencias: string[];
+  scriptSource: string;
+  parametrosEntrada: Array<{ nombre: string; tipo: string; descripcion: string }>;
+  reglasValidacion: string[];
+  activo: boolean;
+  createdBy: string;
+  createdAt: string;
+}
+
+export interface CrossAuditDiscrepancy {
+  id: string;
+  modulo: string;
+  item: string;
+  valorEntidad: string;
+  valorOrganoRector: string;
+  organoRector: string;
+  discrepancia: string;
+  severidad: 'Crítica' | 'Alta' | 'Media' | 'Baja';
+  impactoEconomico?: number;
+  normativaViolada: string;
+  alerta: string;
+}
+
+export interface CrossAuditResult {
+  resumenCruce: string;
+  modulo: 'Compras' | 'Financiero' | 'Activos' | 'Nomina';
+  entidadAuditada: string;
+  organosConsultados: string[];
+  puntuacionConformidad: number;
+  discrepancias: CrossAuditDiscrepancy[];
+  hallazgosDetectados: Array<{
+    titulo: string;
+    condicion: string;
+    criterio: string;
+    causa: string;
+    efecto: string;
+    montoObservado?: number;
+    nivel: 'Crítico' | 'Alto' | 'Medio' | 'Bajo';
+    recomendacion: string;
+    conclusion: string;
+    normativaReferencia: string;
+  }>;
+  evidenciasGeneradas: Array<{
+    fuente: string;
+    url?: string;
+    sha256: string;
+    extracto: string;
+    fechaConsulta: string;
+  }>;
+  fuentesWebEncontradas: Array<{
+    title: string;
+    url: string;
+  }>;
+  fechaCruce: string;
+}
+
+export interface ChatMessage {
+  id: string;
+  role: 'user' | 'model';
+  content: string;
+  timestamp: string;
+  groundingSources?: Array<{ title: string; url: string }>;
+}
+
 export interface DatabaseState {
   expedientes: Expediente[];
   hallazgos: Hallazgo[];
@@ -210,4 +281,5 @@ export interface DatabaseState {
   settings: AppSettings;
   actividad: Actividad[];
   normativas: Normativa[];
+  customPlugins: CustomPlugin[];
 }

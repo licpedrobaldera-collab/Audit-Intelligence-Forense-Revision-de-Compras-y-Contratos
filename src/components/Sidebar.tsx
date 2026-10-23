@@ -17,14 +17,19 @@ import {
   GitPullRequest,
   Layers,
   BookOpen,
-  Settings
+  Settings,
+  GitCompare,
+  Code,
+  MessageSquare
 } from 'lucide-react';
 
 export type ActiveTab =
   | 'dashboard'
   | 'expedientes'
+  | 'cruce-rectores'
   | 'documentos'
   | 'ia-auditor'
+  | 'chat-ia'
   | 'hallazgos'
   | 'workflow'
   | 'matrices'
@@ -32,6 +37,7 @@ export type ActiveTab =
   | 'proveedores'
   | 'pagos'
   | 'web-audit'
+  | 'autoprogramador'
   | 'catalogo-normativo'
   | 'normativas'
   | 'reportes'
@@ -59,8 +65,14 @@ export const Sidebar: React.FC<SidebarProps> = ({
   const menuItems: { id: ActiveTab; label: string; icon: React.ReactNode; badge?: number; badgeColor?: string }[] = [
     { id: 'dashboard', label: 'Dashboard Ejecutivo', icon: <LayoutDashboard className="w-4 h-4" /> },
     { id: 'expedientes', label: 'Expedientes de Auditoría', icon: <FolderKanban className="w-4 h-4" /> },
+    {
+      id: 'cruce-rectores',
+      label: 'Cruce con Órganos Rectores',
+      icon: <GitCompare className="w-4 h-4 text-indigo-400" />
+    },
     { id: 'documentos', label: 'Documentos & OCR', icon: <FileText className="w-4 h-4" /> },
     { id: 'ia-auditor', label: 'IA Auditor (Normativo)', icon: <Bot className="w-4 h-4 text-indigo-400" /> },
+    { id: 'chat-ia', label: 'Chatbot Pericial (Gemini)', icon: <MessageSquare className="w-4 h-4 text-sky-400" /> },
     {
       id: 'hallazgos',
       label: 'Hallazgos (Editor)',
@@ -92,6 +104,7 @@ export const Sidebar: React.FC<SidebarProps> = ({
       badgeColor: 'bg-red-500/20 text-red-300 border-red-500/30'
     },
     { id: 'web-audit', label: 'Auditoría Sitios Web', icon: <Globe className="w-4 h-4 text-emerald-400" /> },
+    { id: 'autoprogramador', label: 'Autoprogramador & Plugins', icon: <Code className="w-4 h-4 text-emerald-400" /> },
     { id: 'catalogo-normativo', label: 'Catálogo Normativo (Ley/Art)', icon: <BookOpen className="w-4 h-4 text-sky-400" /> },
     { id: 'normativas', label: 'Base de Conocimiento Legal', icon: <Scale className="w-4 h-4 text-slate-400" /> },
     { id: 'reportes', label: 'Reportes & Exportaciones', icon: <FileSpreadsheet className="w-4 h-4 text-blue-400" /> },

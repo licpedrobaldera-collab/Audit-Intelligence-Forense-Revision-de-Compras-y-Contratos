@@ -11,7 +11,9 @@ import {
   DocumentVersion,
   NormativeCatalogItem,
   AppSettings,
-  WorkflowStatus
+  WorkflowStatus,
+  CustomPlugin,
+  CrossAuditResult
 } from '../types';
 
 export const api = {
@@ -321,6 +323,84 @@ export const api = {
       body: JSON.stringify({ url, contexto, user }),
     });
     if (!res.ok) throw new Error('Error al auditar portal web');
+    return res.json();
+  },
+
+  // Cross-Audit with Rector Organs & Google Search Grounding
+  async crossAudit(params: {
+    auditType: 'Compras' | 'Financiero' | 'Activos' | 'Nomina';
+    entityName: string;
+    entityDataOrUrl: string;
+    rectorDataOrUrls?: Record<string, string>;
+    useGoogleSearch?: boolean;
+    user?: string;
+  }): Promise<{ success: boolean; result: CrossAuditResult }> {
+    const res = await fetch('/api/ai/cross-audit', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify(params),
+    });
+    if (!res.ok) {
+      const err = await res.json();
+      throw new Error(err.error || 'Error en el cruce con órganos rectores');
+    }
+    return res.json();
+  },
+
+  async saveCrossFindings(params: {
+    expedienteId: number | null;
+    hallazgos: any[];
+    evidencias: any[];
+    user?: string;
+  }): Promise<{ success: boolean; savedHallazgosCount: number; savedEvidenciasCount: number }> {
+    const res = await fetch('/api/ai/cross-audit/save-findings', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify(params),
+    });
+    if (!res.ok) throw new Error('Error al guardar hallazgos y evidencias del cruce');
+    return res.json();
+  },
+
+  // AutoProgrammer & Extension Engine
+  async autoProgram(templateOrPrompt: string, user = 'admin'): Promise<{ success: boolean; pluginDraft: any }> {
+    const res = await fetch('/api/ai/auto-program', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ templateOrPrompt, user }),
+    });
+    if (!res.ok) throw new Error('Error al autoprogramar función');
+    return res.json();
+  },
+
+  async saveCustomPlugin(data: Partial<CustomPlugin> & { user: string }): Promise<{ success: boolean; record: CustomPlugin }> {
+    const res = await fetch('/api/custom-plugins', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify(data),
+    });
+    if (!res.ok) throw new Error('Error al guardar plugin autónomo');
+    return res.json();
+  },
+
+  async deleteCustomPlugin(id: number, user: string): Promise<{ success: boolean }> {
+    const res = await fetch(`/api/custom-plugins/${id}?user=${encodeURIComponent(user)}`, { method: 'DELETE' });
+    return res.json();
+  },
+
+  // Multi-Turn Chat with Gemini
+  async sendChatMessage(
+    messages: Array<{ role: 'user' | 'model'; content: string }>,
+    auditorRole: string,
+    useGoogleSearch = true,
+    user = 'admin'
+  ): Promise<{ success: boolean; reply: string; groundingSources?: Array<{ title: string; url: string }> }> {
+    const res = await fetch('/api/ai/chat', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ messages, auditorRole, useGoogleSearch, user }),
+    });
+    if (!res.ok) throw new Error('Error en consulta de chat pericial');
     return res.json();
   },
 };
