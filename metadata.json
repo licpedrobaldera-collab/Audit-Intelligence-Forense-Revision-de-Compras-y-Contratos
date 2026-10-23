@@ -1,0 +1,6 @@
+{
+  "name": "Audit Intelligence Pro - Enterprise",
+  "description": "Plataforma empresarial de auditoría inteligente, análisis documental con OCR, matriz de riesgos, generación de hallazgos normativos y expediente integral.",
+  "requestFramePermissions": [],
+  "majorCapabilities": ["MAJOR_CAPABILITY_SERVER_SIDE_GEMINI_API"]
+}
