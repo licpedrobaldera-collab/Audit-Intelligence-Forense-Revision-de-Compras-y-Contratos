@@ -1,0 +1,31 @@
+# Dependencias del Entorno Enterprise de Audit Intelligence Pro
+# Módulos periciales, OCR universal, matrices de auditoría y análisis documental
+
+# Interfaz Gráfica y Core
+customtkinter>=5.2.0
+pillow>=10.0.0
+
+# Base de datos y migraciones
+sqlite3-api>=0.1.0; python_version < '3.0'
+
+# OCR y Procesamiento de Imágenes
+pytesseract>=0.3.10
+pdf2image>=1.16.3
+opencv-python>=4.8.0
+pypdf>=3.17.0
+pdfplumber>=0.10.0
+
+# Documentos Office
+python-docx>=1.0.0
+openpyxl>=3.1.2
+xlsxwriter>=3.1.0
+pandas>=2.0.0
+
+# Conexión Web y Rastreo de Portales de Transparencia
+requests>=2.31.0
+urllib3>=2.0.0
+beautifulsoup4>=4.12.0
+lxml>=4.9.0
+
+# Criptografía e Integridad Forense
+cryptography>=41.0.0

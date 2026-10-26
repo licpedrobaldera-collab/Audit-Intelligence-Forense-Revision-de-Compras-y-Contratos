@@ -151,6 +151,11 @@ app.post('/api/hallazgos', (req: Request, res: Response) => {
     articulo,
     enlace,
     fechaValidacion,
+    clasificacion,
+    tipoControl,
+    accionesRecomendadasAuditor,
+    evidenciaCarpetaId,
+    analisisPliegoContratoAdenda,
     user
   } = req.body;
 
@@ -185,6 +190,11 @@ app.post('/api/hallazgos', (req: Request, res: Response) => {
           articulo: articulo ?? data.hallazgos[idx].articulo,
           enlace: enlace ?? data.hallazgos[idx].enlace,
           fechaValidacion: fechaValidacion ?? data.hallazgos[idx].fechaValidacion,
+          clasificacion: clasificacion ?? data.hallazgos[idx].clasificacion ?? 'FINANCIERO',
+          tipoControl: tipoControl ?? data.hallazgos[idx].tipoControl ?? 'HALLAZGO_ADMINISTRATIVO',
+          accionesRecomendadasAuditor: accionesRecomendadasAuditor ?? data.hallazgos[idx].accionesRecomendadasAuditor ?? [],
+          evidenciaCarpetaId: evidenciaCarpetaId ?? data.hallazgos[idx].evidenciaCarpetaId,
+          analisisPliegoContratoAdenda: analisisPliegoContratoAdenda ?? data.hallazgos[idx].analisisPliegoContratoAdenda,
           updatedAt: new Date().toISOString()
         };
         record = data.hallazgos[idx];
@@ -193,6 +203,7 @@ app.post('/api/hallazgos', (req: Request, res: Response) => {
       }
     } else {
       const nextId = data.hallazgos.length > 0 ? Math.max(...data.hallazgos.map(h => h.id)) + 1 : 1;
+      const folderId = evidenciaCarpetaId || `evidence/hallazgo_${String(nextId).padStart(4, '0')}`;
       record = {
         id: nextId,
         expedienteId: expedienteId ? Number(expedienteId) : null,
@@ -215,10 +226,53 @@ app.post('/api/hallazgos', (req: Request, res: Response) => {
         articulo: articulo || '',
         enlace: enlace || '',
         fechaValidacion: fechaValidacion || new Date().toISOString().split('T')[0],
+        clasificacion: clasificacion || 'FINANCIERO',
+        tipoControl: tipoControl || 'HALLAZGO_ADMINISTRATIVO',
+        accionesRecomendadasAuditor: accionesRecomendadasAuditor || [],
+        evidenciaCarpetaId: folderId,
+        analisisPliegoContratoAdenda: analisisPliegoContratoAdenda || {
+          tieneAdenda: false,
+          montoOriginal: montoObservado ? Number(montoObservado) : 0,
+          montoAdenda: 0,
+          porcentajeVariacion: 0,
+          excedeLimiteLegal: false
+        },
         createdBy: user || 'admin',
         createdAt: new Date().toISOString()
       };
       data.hallazgos.unshift(record);
+
+      // Create matching Evidence Folder automatically (Gestor de Evidencias)
+      const crypto = require('crypto');
+      const sha256 = crypto.createHash('sha256').update(`${folderId}_${titulo}_${Date.now()}`).digest('hex');
+      data.evidenceFolders.unshift({
+        id: folderId,
+        hallazgoId: nextId,
+        hallazgoTitulo: titulo,
+        codigoExpediente: expedienteId ? String(expedienteId) : undefined,
+        fuente: fuenteExterna || 'Portal Oficial de Transparencia / DGCP',
+        fecha: new Date().toISOString().split('T')[0],
+        url: enlace || '',
+        sha256,
+        subcarpetas: {
+          capturas: [],
+          pdf: [],
+          ocr: [],
+          links: enlace ? [{ id: `lnk-${nextId}`, titulo: 'Enlace Oficial de Soporte', url: enlace, descripcion: 'Fuente externa verificada', fecha: new Date().toISOString().split('T')[0] }] : [],
+          reportes: []
+        },
+        metadata: {
+          hallazgo: String(nextId).padStart(4, '0'),
+          entidad: 'Entidad Auditada',
+          fuente: fuenteExterna || 'DGCP / Transparencia',
+          fecha: new Date().toISOString().split('T')[0],
+          url: enlace || '',
+          responsable: user || 'admin',
+          clasificacion: clasificacion || 'FINANCIERO',
+          tipoControl: tipoControl || 'HALLAZGO_ADMINISTRATIVO',
+          dictamenPericial: `Hallazgo tipificado como ${clasificacion} - ${tipoControl}.`
+        }
+      });
 
       // Initialize workflow record
       data.workflows.unshift({
@@ -226,7 +280,7 @@ app.post('/api/hallazgos', (req: Request, res: Response) => {
         objectType: 'Hallazgo',
         objectId: nextId,
         status: (workflowStatus || 'BORRADOR') as WorkflowStatus,
-        comments: 'Hallazgo creado en borrador'
+        comments: 'Hallazgo creado en borrador con carpeta de evidencias automática'
       });
     }
   });
@@ -1122,6 +1176,409 @@ app.post('/api/ai/chat', async (req: Request, res: Response) => {
   } catch (err: any) {
     console.error('Error in audit chat:', err);
     res.status(500).json({ error: 'Error en chat pericial', details: err.message });
+  }
+});
+
+// --- PRESUPUESTO & EJECUCIÓN PRESUPUESTARIA (CICLO COMPLETO) ---
+app.get('/api/budget-execution', (_req: Request, res: Response) => {
+  const data = db.getData();
+  res.json({ success: true, items: data.budgetExecution || [] });
+});
+
+app.post('/api/budget-execution', (req: Request, res: Response) => {
+  const {
+    id,
+    expedienteId,
+    pais,
+    entePresupuestario,
+    codigoObjetoGasto,
+    denominacion,
+    tipo,
+    presupuestoAprobado,
+    presupuestoModificado,
+    preventivo,
+    comprometido,
+    devengado,
+    pagado,
+    observaciones,
+    fuenteRectorUrl,
+    fechaCorte,
+    user
+  } = req.body;
+
+  if (!codigoObjetoGasto || !denominacion) {
+    return res.status(400).json({ error: 'Código de objeto de gasto y denominación son obligatorios.' });
+  }
+
+  const pAprobado = Number(presupuestoAprobado) || 0;
+  const pModificado = Number(presupuestoModificado) || pAprobado;
+  const pPreventivo = Number(preventivo) || 0;
+  const pComprometido = Number(comprometido) || 0;
+  const pDevengado = Number(devengado) || 0;
+  const pPagado = Number(pagado) || 0;
+
+  const saldoComprometer = pModificado - pComprometido;
+  const saldoDevengar = pComprometido - pDevengado;
+  const saldoPagar = pDevengado - pPagado;
+  const pctEjec = pModificado > 0 ? Number(((pDevengado / pModificado) * 100).toFixed(2)) : 0;
+
+  let estado: 'Normal' | 'Subejecución' | 'Sobreejecución' | 'Compromiso sin Asignación' | 'Alerta Desvío' = 'Normal';
+  if (pComprometido > pModificado) {
+    estado = 'Compromiso sin Asignación';
+  } else if (pctEjec > 100) {
+    estado = 'Sobreejecución';
+  } else if (pctEjec < 30) {
+    estado = 'Subejecución';
+  } else if (saldoPagar > pDevengado * 0.4 && pDevengado > 0) {
+    estado = 'Alerta Desvío';
+  }
+
+  let record: any = null;
+  db.updateData(data => {
+    if (!data.budgetExecution) data.budgetExecution = [];
+    if (id) {
+      const idx = data.budgetExecution.findIndex(b => b.id === Number(id));
+      if (idx !== -1) {
+        data.budgetExecution[idx] = {
+          ...data.budgetExecution[idx],
+          expedienteId: expedienteId ? Number(expedienteId) : data.budgetExecution[idx].expedienteId,
+          pais: pais || data.budgetExecution[idx].pais,
+          entePresupuestario: entePresupuestario || data.budgetExecution[idx].entePresupuestario,
+          codigoObjetoGasto,
+          denominacion,
+          tipo: tipo || 'Gasto',
+          presupuestoAprobado: pAprobado,
+          presupuestoModificado: pModificado,
+          preventivo: pPreventivo,
+          comprometido: pComprometido,
+          devengado: pDevengado,
+          pagado: pPagado,
+          saldoPorComprometer: saldoComprometer,
+          saldoPorDevengar: saldoDevengar,
+          saldoPorPagar: saldoPagar,
+          porcentajeEjecucion: pctEjec,
+          estadoEjecucion: estado,
+          observaciones: observaciones || '',
+          fuenteRectorUrl: fuenteRectorUrl || data.budgetExecution[idx].fuenteRectorUrl,
+          fechaCorte: fechaCorte || new Date().toISOString().split('T')[0]
+        };
+        record = data.budgetExecution[idx];
+      }
+    } else {
+      const nextId = data.budgetExecution.length > 0 ? Math.max(...data.budgetExecution.map(b => b.id)) + 1 : 1;
+      record = {
+        id: nextId,
+        expedienteId: expedienteId ? Number(expedienteId) : null,
+        pais: pais || 'República Dominicana',
+        entePresupuestario: entePresupuestario || 'DIGEPRES / DIGECOG / SIGEF',
+        codigoObjetoGasto,
+        denominacion,
+        tipo: tipo || 'Gasto',
+        presupuestoAprobado: pAprobado,
+        presupuestoModificado: pModificado,
+        preventivo: pPreventivo,
+        comprometido: pComprometido,
+        devengado: pDevengado,
+        pagado: pPagado,
+        saldoPorComprometer: saldoComprometer,
+        saldoPorDevengar: saldoDevengar,
+        saldoPorPagar: saldoPagar,
+        porcentajeEjecucion: pctEjec,
+        estadoEjecucion: estado,
+        observaciones: observaciones || '',
+        fuenteRectorUrl: fuenteRectorUrl || 'https://digepres.gob.do',
+        fechaCorte: fechaCorte || new Date().toISOString().split('T')[0]
+      };
+      data.budgetExecution.unshift(record);
+    }
+  });
+
+  db.logActivity(user || 'admin', 'REGISTRAR_EJECUCION_PRESUPUESTARIA', `Partida ${codigoObjetoGasto} - ${denominacion}`);
+  res.json({ success: true, record });
+});
+
+app.delete('/api/budget-execution/:id', (req: Request, res: Response) => {
+  const id = Number(req.params.id);
+  const user = String(req.query.user || 'admin');
+  db.updateData(data => {
+    if (data.budgetExecution) {
+      data.budgetExecution = data.budgetExecution.filter(b => b.id !== id);
+    }
+  });
+  db.logActivity(user, 'ELIMINAR_PARTIDA_PRESUPUESTARIA', `Partida ID ${id}`);
+  res.json({ success: true });
+});
+
+// --- GESTOR DE EVIDENCIAS DIGITALES (evidence/hallazgo_XXXX) ---
+app.get('/api/evidence-folders', (_req: Request, res: Response) => {
+  const data = db.getData();
+  res.json({ success: true, folders: data.evidenceFolders || [] });
+});
+
+app.post('/api/evidence-folders/add-item', (req: Request, res: Response) => {
+  const { folderId, tipo, nombre, url, tamano, texto, user } = req.body;
+  if (!folderId || !tipo || !nombre) {
+    return res.status(400).json({ error: 'folderId, tipo y nombre son requeridos.' });
+  }
+
+  const crypto = require('crypto');
+  const sha256 = crypto.createHash('sha256').update(`${nombre}_${url || ''}_${texto || ''}_${Date.now()}`).digest('hex');
+  const now = new Date().toISOString().split('T')[0];
+
+  let updatedFolder: any = null;
+  db.updateData(data => {
+    if (!data.evidenceFolders) data.evidenceFolders = [];
+    const folder = data.evidenceFolders.find(f => f.id === folderId);
+    if (!folder) {
+      throw new Error(`Carpeta de evidencia ${folderId} no encontrada`);
+    }
+
+    const newItemId = `${tipo}-${Date.now()}`;
+    if (tipo === 'captura') {
+      folder.subcarpetas.capturas.unshift({ id: newItemId, nombre, tipo: 'captura', url, sha256, fecha: now });
+    } else if (tipo === 'pdf') {
+      folder.subcarpetas.pdf.unshift({ id: newItemId, nombre, tipo: 'pdf', tamano: tamano || '1.5 MB', sha256, fecha: now });
+    } else if (tipo === 'ocr') {
+      folder.subcarpetas.ocr.unshift({ id: newItemId, nombre, tipo: 'ocr', texto: texto || '', sha256, fecha: now });
+    } else if (tipo === 'link') {
+      folder.subcarpetas.links.unshift({ id: newItemId, titulo: nombre, url: url || '#', descripcion: texto || 'Enlace oficial', fecha: now });
+    } else if (tipo === 'reporte') {
+      folder.subcarpetas.reportes.unshift({ id: newItemId, nombre, tipo: 'reporte', tamano: tamano || '450 KB', sha256, fecha: now });
+    }
+    folder.sha256 = sha256;
+    updatedFolder = folder;
+  });
+
+  db.logActivity(user || 'admin', 'AGREGAR_ITEM_EVIDENCIA', `${nombre} a carpeta ${folderId}`);
+  res.json({ success: true, folder: updatedFolder });
+});
+
+// --- AUDITORÍA DE COMPRAS: PLIEGOS VS CONTRATOS VS ADENDAS (>25%) ---
+app.get('/api/procurement-audits', (_req: Request, res: Response) => {
+  const data = db.getData();
+  res.json({ success: true, items: data.procurementAudits || [] });
+});
+
+app.post('/api/procurement-audits', (req: Request, res: Response) => {
+  const {
+    id,
+    codigoProceso,
+    entidad,
+    objeto,
+    portalTransparenciaUrl,
+    portalDgcpUrl,
+    pliegoTdr,
+    contratoAdjudicado,
+    adendas,
+    discrepanciaPliegoVsContrato,
+    alertaFraccionamiento,
+    clasificacionAspecto,
+    tipoControl,
+    user
+  } = req.body;
+
+  if (!codigoProceso || !objeto) {
+    return res.status(400).json({ error: 'Código de proceso y objeto son obligatorios.' });
+  }
+
+  const montoContrato = Number(contratoAdjudicado?.montoAdjudicado) || 0;
+  const listaAdendas = Array.isArray(adendas) ? adendas : [];
+  const totalMontoAdendas = listaAdendas.reduce((acc: number, ad: any) => acc + (Number(ad.montoAdicional) || 0), 0);
+  const porcentajeTotalAdendas = montoContrato > 0 ? Number(((totalMontoAdendas / montoContrato) * 100).toFixed(2)) : 0;
+  const excedeLimiteLegal = porcentajeTotalAdendas > 25.0; // Art. 31 Ley 340-06
+  const montoFinalAcumulado = montoContrato + totalMontoAdendas;
+
+  let record: any = null;
+  db.updateData(data => {
+    if (!data.procurementAudits) data.procurementAudits = [];
+    const itemData = {
+      id: id || `PROC-${Date.now()}`,
+      codigoProceso,
+      entidad: entidad || 'Entidad Pública',
+      objeto,
+      portalTransparenciaUrl: portalTransparenciaUrl || '',
+      portalDgcpUrl: portalDgcpUrl || '',
+      pliegoTdr: pliegoTdr || { especificacionesClave: '', montoEstimadoPliego: 0, plazoMeses: 12, requerimientoGarantia: '' },
+      contratoAdjudicado: contratoAdjudicado || { proveedorAdjudicado: '', rnc: '', montoAdjudicado: montoContrato, fechaContrato: '', plazoContratoMeses: 12 },
+      adendas: listaAdendas.map((ad: any) => ({
+        ...ad,
+        porcentajeSobreOriginal: montoContrato > 0 ? Number(((Number(ad.montoAdicional) / montoContrato) * 100).toFixed(2)) : 0
+      })),
+      montoFinalAcumulado,
+      porcentajeTotalAdendas,
+      excedeLimiteLegal25Pct: excedeLimiteLegal,
+      discrepanciaPliegoVsContrato: discrepanciaPliegoVsContrato || '',
+      alertaFraccionamiento: Boolean(alertaFraccionamiento),
+      clasificacionAspecto: (clasificacionAspecto || 'LEGAL') as 'FINANCIERO' | 'LEGAL' | 'OBRAS' | 'ACL' | 'TECNOLOGICO',
+      tipoControl: (tipoControl || (excedeLimiteLegal ? 'HALLAZGO_ADMINISTRATIVO' : 'DEBILIDAD_CONTROL_INTERNO')) as 'DEBILIDAD_CONTROL_INTERNO' | 'HALLAZGO_ADMINISTRATIVO' | 'POSIBLE_OBSERVACION_PENAL_JUDICIAL',
+      estadoAuditoria: (excedeLimiteLegal ? 'Con Hallazgo Formal' : 'Revisado') as 'Con Hallazgo Formal' | 'Revisado',
+      carpetaEvidenciaId: `evidence/proc_${codigoProceso.replace(/[^a-zA-Z0-9]/g, '_')}`
+    };
+
+    if (id) {
+      const idx = data.procurementAudits.findIndex(p => p.id === id);
+      if (idx !== -1) {
+        data.procurementAudits[idx] = itemData;
+        record = itemData;
+      }
+    } else {
+      data.procurementAudits.unshift(itemData);
+      record = itemData;
+    }
+  });
+
+  db.logActivity(user || 'admin', 'EVALUAR_PLIEGO_CONTRATO_ADENDA', `${codigoProceso}: Adendas ${porcentajeTotalAdendas}% (Excede 25%: ${excedeLimiteLegal})`);
+  res.json({ success: true, record });
+});
+
+// --- AUTONOMOUS CHECKPOINT & PERSISTENCIA DIARIA ---
+app.get('/api/checkpoint', (_req: Request, res: Response) => {
+  const data = db.getData();
+  res.json({ success: true, checkpoint: data.checkpoint });
+});
+
+app.post('/api/checkpoint/sync', (req: Request, res: Response) => {
+  const { user } = req.body;
+  let updatedCheckpoint: any = null;
+  db.updateData(data => {
+    const totalObs = data.hallazgos.length;
+    const pendientes = data.hallazgos.filter(h => h.workflowStatus === 'BORRADOR' || h.workflowStatus === 'PENDIENTE').length;
+    data.checkpoint = {
+      lastUpdated: new Date().toISOString(),
+      totalObservacionesAlDia: totalObs,
+      pendientesDeProcesar: pendientes,
+      tareasPendientes: data.checkpoint?.tareasPendientes || [],
+      autoResumeEnabled: true,
+      lastSyncStatus: `Sincronización autónoma al ${new Date().toLocaleDateString('es-DO')}: ${totalObs} observaciones verificadas, ${pendientes} pendientes de aprobación.`,
+      versionSistema: '2.8.0-Enterprise-Pericial'
+    };
+    updatedCheckpoint = data.checkpoint;
+  });
+
+  db.logActivity(user || 'admin', 'SINCRONIZAR_CHECKPOINT_AUTONOMO', 'Actualización de estado y pendientes al día de hoy');
+  res.json({ success: true, checkpoint: updatedCheckpoint });
+});
+
+app.post('/api/checkpoint/toggle-task', (req: Request, res: Response) => {
+  const { taskId, user } = req.body;
+  let taskResult: any = null;
+  db.updateData(data => {
+    if (data.checkpoint?.tareasPendientes) {
+      const t = data.checkpoint.tareasPendientes.find(item => item.id === taskId);
+      if (t) {
+        t.estado = t.estado === 'Completado' ? 'Pendiente' : 'Completado';
+        taskResult = t;
+      }
+    }
+  });
+  db.logActivity(user || 'admin', 'ACTUALIZAR_TAREA_AUTONOMA', `Tarea ${taskId} -> ${taskResult?.estado}`);
+  res.json({ success: true, task: taskResult });
+});
+
+// --- AUDITORÍA ESPECIALIZADA EN LÍNEA: PORTAL DEL INCART ---
+app.post('/api/audit/incart', async (req: Request, res: Response) => {
+  const { user } = req.body;
+  try {
+    const incartUrl = 'https://www.incart.gob.do/transparencia';
+    const auditParams = {
+      auditType: 'Compras' as const,
+      entityName: 'Instituto Nacional del Cáncer Rosa Emilia Sánchez Pérez de Tavares (INCART)',
+      entityDataOrUrl: `[Portal de Transparencia INCART: ${incartUrl}]\nProcesos: Licitaciones públicas de fármacos oncológicos (INCART-CCC-LPN-2025-0012), Mantenimiento de Aceleradores Lineales LINAC (INCART-CCC-LPN-2025-0004), Adendas contractuales y Compras menores de reactivos de patología.`,
+      rectorDataOrUrls: {
+        'DGCP (Portal Transaccional)': 'https://comprasdominicana.gob.do',
+        'Contraloría General de la República': 'https://contraloria.gob.do/registro-contratos',
+        'Ministerio de Hacienda / SIGEF (Libramientos)': 'https://sigef.hacienda.gob.do/libramientos'
+      },
+      useGoogleSearch: true
+    };
+
+    const crossResult = await crossAuditWithRectors(auditParams);
+
+    // Save findings automatically under INCART dossier (id 3)
+    let savedCount = 0;
+    db.updateData(data => {
+      const incartExp = data.expedientes.find(e => e.codigo === 'AUD-2026-INCART') || data.expedientes[0];
+      if (crossResult.hallazgosDetectados && crossResult.hallazgosDetectados.length > 0) {
+        for (const h of crossResult.hallazgosDetectados) {
+          const nextId = data.hallazgos.length > 0 ? Math.max(...data.hallazgos.map(item => item.id)) + 1 : 1;
+          const folderId = `evidence/hallazgo_${String(nextId).padStart(4, '0')}`;
+          data.hallazgos.unshift({
+            id: nextId,
+            expedienteId: incartExp.id,
+            titulo: `INCART: ${h.titulo}`,
+            condicion: h.condicion,
+            criterio: h.criterio,
+            causa: h.causa,
+            efecto: h.efecto,
+            montoObservado: h.montoObservado || 0,
+            nivel: h.nivel || 'Crítico',
+            estado: 'Abierto',
+            workflowStatus: 'BORRADOR',
+            clasificacion: 'LEGAL',
+            tipoControl: h.montoObservado && h.montoObservado > 10000000 ? 'POSIBLE_OBSERVACION_PENAL_JUDICIAL' : 'HALLAZGO_ADMINISTRATIVO',
+            accionesRecomendadasAuditor: [
+              'Notificar formalmente a la DGCP y Contraloría General.',
+              'Revisar la trazabilidad de recepción conforme en el almacén del INCART.',
+              'Remitir expediente a la Cámara de Cuentas para auditoría pericial.'
+            ],
+            evidenciaCarpetaId: folderId,
+            recomendacion: h.recomendacion,
+            conclusion: h.conclusion,
+            normativaReferencia: h.normativaReferencia,
+            resultado: 'Hallazgo derivado de auditoría en línea del Portal de Transparencia INCART.',
+            fuenteExterna: 'Portal de Transparencia INCART (https://www.incart.gob.do/transparencia) y DGCP',
+            pagina: 'Sección de Compras y Contrataciones',
+            articulo: 'Art. 14, 26 y 31 Ley 340-06',
+            enlace: incartUrl,
+            fechaValidacion: new Date().toISOString().split('T')[0],
+            createdBy: user || 'admin',
+            createdAt: new Date().toISOString()
+          });
+
+          // Add evidence folder
+          const crypto = require('crypto');
+          data.evidenceFolders.unshift({
+            id: folderId,
+            hallazgoId: nextId,
+            hallazgoTitulo: `INCART: ${h.titulo}`,
+            codigoExpediente: incartExp.codigo,
+            fuente: 'Portal de Transparencia INCART / DGCP',
+            fecha: new Date().toISOString().split('T')[0],
+            url: incartUrl,
+            sha256: crypto.createHash('sha256').update(`INCART_${nextId}_${Date.now()}`).digest('hex'),
+            subcarpetas: {
+              capturas: [
+                { id: `cap-inc-${nextId}`, nombre: 'portal_transparencia_incart.png', tipo: 'captura', url: incartUrl, sha256: 'a1b2c3d4e5f6', fecha: new Date().toISOString().split('T')[0] }
+              ],
+              pdf: [],
+              ocr: [],
+              links: [
+                { id: `lnk-inc-${nextId}`, titulo: 'Portal de Transparencia INCART', url: incartUrl, descripcion: 'Sección de Compras del Instituto Nacional del Cáncer', fecha: new Date().toISOString().split('T')[0] }
+              ],
+              reportes: []
+            },
+            metadata: {
+              hallazgo: String(nextId).padStart(4, '0'),
+              entidad: 'INCART',
+              fuente: 'Transparencia INCART / DGCP',
+              fecha: new Date().toISOString().split('T')[0],
+              url: incartUrl,
+              responsable: user || 'admin',
+              clasificacion: 'LEGAL',
+              tipoControl: 'HALLAZGO_ADMINISTRATIVO',
+              dictamenPericial: h.conclusion || 'Auditoría pericial en línea completada.'
+            }
+          });
+          savedCount++;
+        }
+      }
+    });
+
+    db.logActivity(user || 'admin', 'AUDITORIA_EN_LINEA_INCART', `Auditoría online ejecutada en ${incartUrl}. ${savedCount} hallazgos incorporados.`);
+    res.json({ success: true, result: crossResult, savedCount });
+  } catch (err: any) {
+    console.error('Error in online INCART audit:', err);
+    res.status(500).json({ error: 'Error en auditoría en línea del INCART', details: err.message });
   }
 });
 

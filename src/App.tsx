@@ -21,6 +21,10 @@ import { SettingsView } from './components/SettingsView';
 import { CrossRectorAuditView } from './components/CrossRectorAuditView';
 import { AutoProgrammerView } from './components/AutoProgrammerView';
 import { AuditChatbotView } from './components/AuditChatbotView';
+import { ProcurementAuditView } from './components/ProcurementAuditView';
+import { BudgetAuditView } from './components/BudgetAuditView';
+import { EvidenceManagerView } from './components/EvidenceManagerView';
+import { AutonomousCheckpointBanner } from './components/AutonomousCheckpointBanner';
 import {
   DatabaseState,
   Expediente,
@@ -239,16 +243,52 @@ export default function App() {
           riesgosCriticosCount={riesgosCriticos}
           pagosDuplicadosCount={pagosDuplicados}
           workflowPendingCount={workflowPending}
+          adendasExcessCount={data.procurementAudits?.filter(p => p.excedeLimiteLegal25Pct).length || 0}
         />
 
         {/* Main Content Workspace */}
         <main className="flex-1 p-6 overflow-y-auto bg-slate-950">
-          <div className="max-w-7xl mx-auto">
+          <div className="max-w-7xl mx-auto space-y-6">
+            {/* Autonomous Checkpoint & Continuity Banner */}
+            <AutonomousCheckpointBanner
+              data={data}
+              currentUser={currentUser}
+              onRefreshData={loadData}
+            />
+
             {activeTab === 'dashboard' && (
               <DashboardView
                 data={data}
                 selectedExpediente={activeExpediente}
                 onNavigate={setActiveTab}
+              />
+            )}
+
+            {activeTab === 'compras-tdr' && (
+              <ProcurementAuditView
+                data={data}
+                selectedExpedienteId={selectedExpedienteId}
+                currentUser={currentUser}
+                onRefreshData={loadData}
+                onNavigateToTab={(tab: string) => setActiveTab(tab as ActiveTab)}
+              />
+            )}
+
+            {activeTab === 'presupuesto' && (
+              <BudgetAuditView
+                data={data}
+                selectedExpedienteId={selectedExpedienteId}
+                currentUser={currentUser}
+                onRefreshData={loadData}
+              />
+            )}
+
+            {activeTab === 'evidencias-folder' && (
+              <EvidenceManagerView
+                data={data}
+                selectedExpedienteId={selectedExpedienteId}
+                currentUser={currentUser}
+                onRefreshData={loadData}
               />
             )}
 

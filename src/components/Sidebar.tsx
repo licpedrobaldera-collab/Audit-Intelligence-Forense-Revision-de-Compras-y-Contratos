@@ -20,13 +20,19 @@ import {
   Settings,
   GitCompare,
   Code,
-  MessageSquare
+  MessageSquare,
+  FileCheck,
+  DollarSign,
+  FolderArchive
 } from 'lucide-react';
 
 export type ActiveTab =
   | 'dashboard'
   | 'expedientes'
   | 'cruce-rectores'
+  | 'compras-tdr'
+  | 'presupuesto'
+  | 'evidencias-folder'
   | 'documentos'
   | 'ia-auditor'
   | 'chat-ia'
@@ -52,6 +58,7 @@ interface SidebarProps {
   riesgosCriticosCount: number;
   pagosDuplicadosCount: number;
   workflowPendingCount?: number;
+  adendasExcessCount?: number;
 }
 
 export const Sidebar: React.FC<SidebarProps> = ({
@@ -61,10 +68,28 @@ export const Sidebar: React.FC<SidebarProps> = ({
   riesgosCriticosCount,
   pagosDuplicadosCount,
   workflowPendingCount = 0,
+  adendasExcessCount = 1,
 }) => {
   const menuItems: { id: ActiveTab; label: string; icon: React.ReactNode; badge?: number; badgeColor?: string }[] = [
     { id: 'dashboard', label: 'Dashboard Ejecutivo', icon: <LayoutDashboard className="w-4 h-4" /> },
     { id: 'expedientes', label: 'Expedientes de Auditoría', icon: <FolderKanban className="w-4 h-4" /> },
+    {
+      id: 'compras-tdr',
+      label: 'Pliegos / TDR vs Contratos & Adendas',
+      icon: <FileCheck className="w-4 h-4 text-rose-400" />,
+      badge: adendasExcessCount > 0 ? adendasExcessCount : undefined,
+      badgeColor: 'bg-rose-500/20 text-rose-300 border-rose-500/30'
+    },
+    {
+      id: 'presupuesto',
+      label: 'Ejecución Presupuestaria (Ciclo Completo)',
+      icon: <DollarSign className="w-4 h-4 text-emerald-400" />
+    },
+    {
+      id: 'evidencias-folder',
+      label: 'Gestor de Evidencias Digitales',
+      icon: <FolderArchive className="w-4 h-4 text-purple-400" />
+    },
     {
       id: 'cruce-rectores',
       label: 'Cruce con Órganos Rectores',
@@ -87,7 +112,7 @@ export const Sidebar: React.FC<SidebarProps> = ({
       badge: workflowPendingCount > 0 ? workflowPendingCount : undefined,
       badgeColor: 'bg-purple-500/20 text-purple-300 border-purple-500/30'
     },
-    { id: 'matrices', label: 'Matrices de Auditoría (5)', icon: <Layers className="w-4 h-4 text-emerald-400" /> },
+    { id: 'matrices', label: 'Matrices de Auditoría (8)', icon: <Layers className="w-4 h-4 text-emerald-400" /> },
     {
       id: 'riesgos',
       label: 'Matriz de Riesgos',

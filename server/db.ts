@@ -33,16 +33,148 @@ export interface Hallazgo {
   conclusion?: string;
   normativaReferencia?: string;
   evidenciasAsociadas?: string[];
-  // Trazabilidad forense
+  // Trazabilidad forense y tipificación pericial
   resultado?: string;
   fuenteExterna?: string;
   pagina?: string;
   articulo?: string;
   enlace?: string;
   fechaValidacion?: string;
+  clasificacion?: 'FINANCIERO' | 'LEGAL' | 'OBRAS' | 'ACL' | 'TECNOLOGICO' | 'CONTROL_INTERNO';
+  tipoControl?: 'DEBILIDAD_CONTROL_INTERNO' | 'HALLAZGO_ADMINISTRATIVO' | 'POSIBLE_OBSERVACION_PENAL_JUDICIAL';
+  accionesRecomendadasAuditor?: string[];
+  evidenciaCarpetaId?: string;
+  analisisPliegoContratoAdenda?: {
+    tieneAdenda: boolean;
+    montoOriginal: number;
+    montoAdenda: number;
+    porcentajeVariacion: number;
+    excedeLimiteLegal: boolean;
+    discrepanciaTdrPliego?: string;
+  };
   createdBy: string;
   createdAt: string;
   updatedAt?: string;
+}
+
+export interface BudgetExecutionItem {
+  id: number;
+  expedienteId?: number | null;
+  pais: string;
+  entePresupuestario: string; // ej. DIGEPRES / DIGECOG / SIGEF
+  codigoObjetoGasto: string; // 2.1, 2.2, 2.3, 2.4, 2.6, 2.7
+  denominacion: string;
+  tipo: 'Ingreso' | 'Gasto';
+  presupuestoAprobado: number;
+  presupuestoModificado: number;
+  preventivo: number;
+  comprometido: number;
+  devengado: number;
+  pagado: number;
+  saldoPorComprometer: number;
+  saldoPorDevengar: number;
+  saldoPorPagar: number;
+  porcentajeEjecucion: number;
+  estadoEjecucion: 'Normal' | 'Subejecución' | 'Sobreejecución' | 'Compromiso sin Asignación' | 'Alerta Desvío';
+  observaciones: string;
+  fuenteRectorUrl?: string;
+  fechaCorte: string;
+}
+
+export interface EvidenceFolderItem {
+  id: string;
+  nombre: string;
+  tipo: 'captura' | 'pdf' | 'ocr' | 'link' | 'reporte';
+  url?: string;
+  tamano?: string;
+  sha256: string;
+  texto?: string;
+  fecha: string;
+}
+
+export interface EvidenceFolder {
+  id: string;
+  hallazgoId: number;
+  hallazgoTitulo: string;
+  codigoExpediente?: string;
+  fuente: string;
+  fecha: string;
+  url?: string;
+  sha256: string;
+  subcarpetas: {
+    capturas: EvidenceFolderItem[];
+    pdf: EvidenceFolderItem[];
+    ocr: EvidenceFolderItem[];
+    links: Array<{ id: string; titulo: string; url: string; descripcion: string; fecha: string }>;
+    reportes: EvidenceFolderItem[];
+  };
+  metadata: {
+    hallazgo: string;
+    entidad: string;
+    fuente: string;
+    fecha: string;
+    url: string;
+    responsable: string;
+    clasificacion: string;
+    tipoControl: string;
+    dictamenPericial: string;
+  };
+}
+
+export interface ProcurementAuditItem {
+  id: string;
+  codigoProceso: string;
+  entidad: string;
+  objeto: string;
+  portalTransparenciaUrl: string;
+  portalDgcpUrl?: string;
+  pliegoTdr: {
+    especificacionesClave: string;
+    montoEstimadoPliego: number;
+    plazoMeses: number;
+    requerimientoGarantia: string;
+  };
+  contratoAdjudicado: {
+    proveedorAdjudicado: string;
+    rnc: string;
+    montoAdjudicado: number;
+    fechaContrato: string;
+    plazoContratoMeses: number;
+  };
+  adendas: Array<{
+    numeroAdenda: string;
+    fecha: string;
+    montoAdicional: number;
+    porcentajeSobreOriginal: number;
+    justificacion: string;
+    aprobadaPorOrganoRector: boolean;
+  }>;
+  montoFinalAcumulado: number;
+  porcentajeTotalAdendas: number;
+  excedeLimiteLegal25Pct: boolean;
+  discrepanciaPliegoVsContrato: string;
+  alertaFraccionamiento: boolean;
+  clasificacionAspecto: 'FINANCIERO' | 'LEGAL' | 'OBRAS' | 'ACL' | 'TECNOLOGICO';
+  tipoControl: 'DEBILIDAD_CONTROL_INTERNO' | 'HALLAZGO_ADMINISTRATIVO' | 'POSIBLE_OBSERVACION_PENAL_JUDICIAL';
+  estadoAuditoria: 'Revisado' | 'En Observación' | 'Con Hallazgo Formal';
+  carpetaEvidenciaId?: string;
+}
+
+export interface AutonomousCheckpoint {
+  lastUpdated: string;
+  totalObservacionesAlDia: number;
+  pendientesDeProcesar: number;
+  tareasPendientes: Array<{
+    id: string;
+    tarea: string;
+    modulo: string;
+    estado: 'Pendiente' | 'En Proceso' | 'Completado';
+    prioridad: 'Crítica' | 'Alta' | 'Media';
+    fechaProgramada: string;
+  }>;
+  autoResumeEnabled: boolean;
+  lastSyncStatus: string;
+  versionSistema: string;
 }
 
 export interface Riesgo {
@@ -230,6 +362,10 @@ export interface DatabaseSchema {
   actividad: Actividad[];
   normativas: Normativa[];
   customPlugins: CustomPlugin[];
+  budgetExecution: BudgetExecutionItem[];
+  evidenceFolders: EvidenceFolder[];
+  procurementAudits: ProcurementAuditItem[];
+  checkpoint: AutonomousCheckpoint;
 }
 
 const DB_DIR = path.resolve(process.cwd(), 'database');
@@ -338,6 +474,19 @@ function getInitialData(): DatabaseSchema {
         estado: 'En revisión',
         createdBy: 'admin',
         createdAt: '2026-02-01T10:30:00Z'
+      },
+      {
+        id: 3,
+        codigo: 'AUD-2026-INCART',
+        nombre: 'Fiscalización Pericial en Línea: Compras, TDR vs Contratos, Adendas >25%, Fármacos Oncológicos y Presupuesto',
+        entidad: 'Instituto Nacional del Cáncer Rosa Emilia Sánchez Pérez de Tavares (INCART)',
+        objetivo: 'Auditar la transparencia en compras (https://www.incart.gob.do/transparencia), contraste de pliegos vs contratos, adendas que sobrepasan el límite legal del 25% (Ley 340-06), fármacos oncológicos, mantenimiento de LINAC y ciclo presupuestario DIGEPRES/DIGECOG.',
+        responsable: 'Lic. Pedro Baldera / Auditor Forense Principal',
+        periodo: 'Ejercicio Fiscal 2025 - 2026',
+        fecha: '2026-02-10',
+        estado: 'Activo',
+        createdBy: 'admin',
+        createdAt: '2026-02-10T08:00:00Z'
       }
     ],
     hallazgos: [
@@ -353,6 +502,22 @@ function getInitialData(): DatabaseSchema {
         nivel: 'Crítico',
         estado: 'Abierto',
         workflowStatus: 'REVISION',
+        clasificacion: 'FINANCIERO',
+        tipoControl: 'HALLAZGO_ADMINISTRATIVO',
+        accionesRecomendadasAuditor: [
+          'Remitir informe pericial circunstanciado a la Dirección General de Contrataciones Públicas (DGCP).',
+          'Instruir apertura de proceso disciplinario sancionatorio bajo Ley 41-08 de Función Pública.',
+          'Consolidar requerimientos futuros en una sola Licitación Pública Nacional con pliegos estandarizados.'
+        ],
+        evidenciaCarpetaId: 'evidence/hallazgo_0001',
+        analisisPliegoContratoAdenda: {
+          tieneAdenda: false,
+          montoOriginal: 19600000,
+          montoAdenda: 0,
+          porcentajeVariacion: 0,
+          excedeLimiteLegal: false,
+          discrepanciaTdrPliego: 'Fraccionamiento de 8 compras menores sucesivas eludiendo el umbral de Licitación Pública.'
+        },
         recomendacion: '1. Iniciar investigación administrativa y remitir informe a la Dirección General de Contrataciones Públicas (DGCP). 2. Consolidar los requerimientos de insumos en una Licitación Pública Nacional con pliegos estandarizados. 3. Sancionar a los responsables del fraccionamiento conforme al Art. 30 de la Ley 10-04.',
         conclusion: 'Se determina incumplimiento severo y sistemático de la Ley 340-06 por fraccionamiento deliberado.',
         normativaReferencia: 'Ley 340-06 Art. 14 / Dec. 543-12 Art. 16',
@@ -361,7 +526,7 @@ function getInitialData(): DatabaseSchema {
         fuenteExterna: 'Portal Transaccional DGCP - Consulta de Procesos Menores MOPC-DAF-CM-2025-019',
         pagina: 'Págs. 14-22 del expediente de compras',
         articulo: 'Art. 14 Ley 340-06',
-        enlace: 'https://comprasdominicana.gov.do/procesos/MOPC-2025-081',
+        enlace: 'https://comprasdominicana.gob.do/procesos/MOPC-2025-081',
         fechaValidacion: '2026-01-22',
         createdBy: 'admin',
         createdAt: '2026-01-20T11:00:00Z'
@@ -378,6 +543,22 @@ function getInitialData(): DatabaseSchema {
         nivel: 'Alto',
         estado: 'En proceso',
         workflowStatus: 'PENDIENTE',
+        clasificacion: 'LEGAL',
+        tipoControl: 'DEBILIDAD_CONTROL_INTERNO',
+        accionesRecomendadasAuditor: [
+          'Exigir inmediatamente a la aseguradora la emisión retroactiva de la fianza bancaria o de seguros.',
+          'Suspender todo libramiento pendiente hasta contar con Acta de Recepción Conforme suscrita por peritos colegiados.',
+          'Reestructurar la mesa de control previo en la Dirección Administrativa y Financiera.'
+        ],
+        evidenciaCarpetaId: 'evidence/hallazgo_0002',
+        analisisPliegoContratoAdenda: {
+          tieneAdenda: false,
+          montoOriginal: 6850000,
+          montoAdenda: 0,
+          porcentajeVariacion: 0,
+          excedeLimiteLegal: false,
+          discrepanciaTdrPliego: 'Contrato firmado omitió requerir la constitución de fianza de fiel cumplimiento antes de ejecutar libramientos.'
+        },
         recomendacion: 'Requerir inmediatamente a la empresa contratista la fianza bancaria o de seguros con carácter retroactivo y suspender cualquier desembolso pendiente hasta contar con informe técnico pericial.',
         conclusion: 'Inobservancia de requisitos sustanciales para el pago a proveedores.',
         normativaReferencia: 'Dec. 543-12 Art. 85 / NOBACI 4.1',
@@ -403,6 +584,14 @@ function getInitialData(): DatabaseSchema {
         nivel: 'Alto',
         estado: 'Abierto',
         workflowStatus: 'BORRADOR',
+        clasificacion: 'FINANCIERO',
+        tipoControl: 'DEBILIDAD_CONTROL_INTERNO',
+        accionesRecomendadasAuditor: [
+          'Gestionar la nota de crédito o el reintegro inmediato mediante transferencia bancaria de la suma duplicada.',
+          'Activar el bloqueo de NCF duplicados en el software institucional de pagos.',
+          'Notificar a la DGII para verificación del estatus tributario de la factura.'
+        ],
+        evidenciaCarpetaId: 'evidence/hallazgo_0003',
         recomendacion: '1. Solicitar el reintegro inmediato de los RD$ 425,000.00 pagados de más. 2. Implementar alerta automática de control previo en el software financiero para bloquear NCF repetidos.',
         conclusion: 'Doble afectación de fondos por deficiencias de control interno.',
         normativaReferencia: 'NOBACI 2.3 / Dec. 254-06',
@@ -415,6 +604,90 @@ function getInitialData(): DatabaseSchema {
         fechaValidacion: '2026-02-06',
         createdBy: 'admin',
         createdAt: '2026-02-05T16:00:00Z'
+      },
+      {
+        id: 4,
+        expedienteId: 3,
+        titulo: 'INCART: Adenda al Contrato de Mantenimiento Integral de Aceleradores Lineales (LINAC) excede el 25% del límite legal de la Ley 340-06',
+        condicion: 'En la fiscalización de las compras y contrataciones publicadas en el Portal de Transparencia del INCART (https://www.incart.gob.do/transparencia) se constató la formalización de la Adenda No. 1 al Contrato CONTR-INCART-2025-018 para mantenimiento preventivo y correctivo de aceleradores lineales. La adenda incrementó el monto en RD$ 11,500,000.00 sobre un monto original contratado de RD$ 28,000,000.00 (+41.07% de aumento), sobrepasando ampliamente el límite legal máximo del 25% establecido por el Artículo 31 de la Ley No. 340-06 (cuyo tope permitido era RD$ 7,000,000.00). La adenda además incluyó repuestos mayores no contemplados en el pliego de condiciones sin contar con no-objeción de la DGCP.',
+        criterio: 'Ley No. 340-06 Art. 31: "La entidad contratante podrá modificar, disminuir o aumentar hasta un veinticinco por ciento (25%) el monto del contrato original". Decreto No. 543-12 Art. 110 y Ley No. 10-04 Art. 30 y 47.',
+        causa: 'Falta de previsión técnica en el pliego de condiciones original y elusión de un nuevo procedimiento de licitación para la adquisición de repuestos de alta tecnología médica.',
+        efecto: 'Violación flagrante del régimen legal de contrataciones públicas, erogación de RD$ 4,500,000.00 por encima del umbral legal permitido y vulneración del principio de igualdad de oferentes.',
+        montoObservado: 11500000.00,
+        nivel: 'Crítico',
+        estado: 'Abierto',
+        workflowStatus: 'REVISION',
+        clasificacion: 'LEGAL',
+        tipoControl: 'HALLAZGO_ADMINISTRATIVO',
+        accionesRecomendadasAuditor: [
+          'Declarar la nulidad de pleno derecho de la porción excesiva de la adenda (RD$ 4,500,000.00) por violación del Art. 31 de la Ley 340-06.',
+          'Notificar de oficio a la Dirección General de Contrataciones Públicas (DGCP) para la apertura de expediente de investigación sancionadora.',
+          'Instruir al Director Administrativo y a la Unidad de Auditoría Interna a suspender cualquier libramiento en Tesorería amparado en dicha adenda irregular.',
+          'Convocar a Licitación Pública Nacional separada para el suministro de tubos y repuestos de aceleradores lineales.'
+        ],
+        evidenciaCarpetaId: 'evidence/hallazgo_0004',
+        analisisPliegoContratoAdenda: {
+          tieneAdenda: true,
+          montoOriginal: 28000000,
+          montoAdenda: 11500000,
+          porcentajeVariacion: 41.07,
+          excedeLimiteLegal: true,
+          discrepanciaTdrPliego: 'Pliego INCART-CCC-LPN-2025-0004 contemplaba exclusivamente mano de obra de mantenimiento preventivo. La Adenda No. 1 introdujo repuestos de alto costo alterando el objeto y superando el 25% legal permitido (alcanzó 41.07%).'
+        },
+        recomendacion: '1. Dejar sin efecto la porción en exceso de la adenda no amparada en la Ley 340-06. 2. Someter informe de responsabilidad administrativa ante el órgano rector DGCP y Contraloría General. 3. Adoptar matriz de control para bloquear adendas superiores al 25% en el sistema financiero.',
+        conclusion: 'Incumplimiento grave del límite legal de adendas establecido en el Art. 31 de la Ley 340-06 con riesgo de nulidad contractual.',
+        normativaReferencia: 'Ley 340-06 Art. 31 / Dec. 543-12 Art. 110',
+        evidenciasAsociadas: ['Pliego-INCART-LINAC-2025.pdf', 'Contrato-INCART-CONTR-018.pdf', 'Adenda-01-INCART-LINAC.pdf'],
+        resultado: 'Sobrepaso de RD$ 4,500,000.00 del tope legal del 25% en adenda contractual no licitada.',
+        fuenteExterna: 'Portal de Transparencia INCART (https://www.incart.gob.do/transparencia) y Portal Transaccional DGCP',
+        pagina: 'Pág. 12 Contrato CONTR-INCART-2025-018 y Cláusula 2da de la Adenda No. 1',
+        articulo: 'Art. 31 Ley No. 340-06',
+        enlace: 'https://www.incart.gob.do/transparencia/compras-y-contrataciones/procesos-de-compras',
+        fechaValidacion: '2026-02-12',
+        createdBy: 'admin',
+        createdAt: '2026-02-12T10:00:00Z'
+      },
+      {
+        id: 5,
+        expedienteId: 3,
+        titulo: 'INCART: Discrepancia sustancial entre Pliego de Condiciones / TDR y Contrato Adjudicado en Licitación de Fármacos Oncológicos y Citostáticos',
+        condicion: 'En la licitación pública INCART-CCC-LPN-2025-0012 para el suministro de fármacos oncológicos de alto costo (Trastuzumab, Paclitaxel, Cisplatino y Pembrolizumab) por valor de RD$ 45,800,000.00, el Pliego de Condiciones Definitivo publicado en https://www.incart.gob.do/transparencia y en el Portal Transaccional de la DGCP exigía de forma imperativa: a) Garantía de Cadena de Frío certificada de 2°C a 8°C mediante sensores termosensibles en cada entrega; b) Constitución previa de Póliza de Fiel Cumplimiento equivalente al 10% del contrato; c) Penalidad del 1% por cada día de mora en entrega para evitar el desabastecimiento hospitalario de pacientes con cáncer; d) Prohibición expresa de pagos por anticipo. No obstante, al cotejar el Contrato adjudicado CONTR-INCART-2025-032 se constató que se eliminó la cláusula de penalidad por mora, no se exigió el reporte de cadena de frío y se otorgó de forma ilícita un anticipo financiero del 20% (RD$ 9,160,000.00) sin fianza de buen uso de anticipo.',
+        criterio: 'Ley No. 340-06 Art. 26 (Principio de Transparencia y Rigor del Pliego), Art. 30 y 31; Decreto No. 543-12 Art. 85 (Recepción de peritos técnicos farmacéuticos); Ley No. 10-04 Art. 47; Código Procesal Penal (indicios de prevaricación y favoritismo administrativo).',
+        causa: 'Alteración posterior a la adjudicación de las condiciones sustanciales del pliego en beneficio de la empresa adjudicataria.',
+        efecto: 'Exposición patrimonial crítica por RD$ 45,800,000.00, riesgo severo de medicamentos degradados térmicamente suministrados a pacientes oncológicos y daño al erario por anticipos sin garantía.',
+        montoObservado: 45800000.00,
+        nivel: 'Crítico',
+        estado: 'Abierto',
+        workflowStatus: 'PENDIENTE',
+        clasificacion: 'LEGAL',
+        tipoControl: 'POSIBLE_OBSERVACION_PENAL_JUDICIAL',
+        accionesRecomendadasAuditor: [
+          'Exigir de manera inmediata y perentoria la constitución de la fianza bancaria de buen uso de anticipo y fiel cumplimiento por el 30% total.',
+          'Ordenar peritaje químico y físico por el Instituto Nacional de Ciencias Forenses (INACIF) y DIGEMAPS de los lotes farmacéuticos entregados.',
+          'Remitir el informe especial de auditoría con sustento de indicios penales a la Procuraduría Especializada de Persecución de la Corrupción Administrativa (PEPCA).',
+          'Abrir sumario administrativo al Comité de Compras y Contrataciones del INCART por modificación ilícita del pliego de condiciones.'
+        ],
+        evidenciaCarpetaId: 'evidence/hallazgo_0005',
+        analisisPliegoContratoAdenda: {
+          tieneAdenda: false,
+          montoOriginal: 45800000,
+          montoAdenda: 0,
+          porcentajeVariacion: 0,
+          excedeLimiteLegal: false,
+          discrepanciaTdrPliego: 'Pliego exigía garantía del 10%, monitoreo térmico 2-8°C y penalidad del 1% diario por mora sin anticipos. Contrato formalizado concedió anticipo de 20% sin fianza y suprimió penalidades por desabastecimiento.'
+        },
+        recomendacion: '1. Someter el caso a la DGCP y a la PEPCA por indicios de responsabilidad penal y vulneración de la igualdad de proponentes. 2. Aplicar auditoría forense a las actas de recepción de farmacia del INCART.',
+        conclusion: 'Modificación ilícita de los pliegos de condiciones en el contrato definitivo con grave riesgo a la salud pública y patrimonial.',
+        normativaReferencia: 'Ley 340-06 Art. 26 / Dec. 543-12 Art. 85',
+        evidenciasAsociadas: ['Pliego-INCART-LPN-2025-0012.pdf', 'Contrato-CONTR-INCART-2025-032.pdf', 'Acta-Adjudicacion-INCART-Farmacos.pdf'],
+        resultado: 'RD$ 45.8M contratados con supresión irregular de garantías sanitarias y financieras obligadas por el Pliego.',
+        fuenteExterna: 'Portal Transaccional DGCP y Portal de Transparencia INCART (https://www.incart.gob.do/transparencia)',
+        pagina: 'Pág. 19 Pliego LPN-2025-0012 vs Cláusula 5ta y 9na del Contrato CONTR-032',
+        articulo: 'Art. 26 Ley No. 340-06',
+        enlace: 'https://www.incart.gob.do/transparencia/compras-y-contrataciones',
+        fechaValidacion: '2026-02-14',
+        createdBy: 'admin',
+        createdAt: '2026-02-14T11:30:00Z'
       }
     ],
     riesgos: [
@@ -840,7 +1113,407 @@ function getInitialData(): DatabaseSchema {
         createdBy: 'admin',
         createdAt: '2026-01-15T08:00:00Z'
       }
-    ]
+    ],
+    budgetExecution: [
+      {
+        id: 1,
+        expedienteId: 3,
+        pais: 'República Dominicana',
+        entePresupuestario: 'DIGEPRES / DIGECOG / SIGEF',
+        codigoObjetoGasto: '2.3',
+        denominacion: 'Materiales y Suministros Médicos (Fármacos Oncológicos y Citostáticos)',
+        tipo: 'Gasto',
+        presupuestoAprobado: 120000000.00,
+        presupuestoModificado: 145000000.00,
+        preventivo: 142000000.00,
+        comprometido: 138500000.00,
+        devengado: 110200000.00,
+        pagado: 89400000.00,
+        saldoPorComprometer: 6500000.00,
+        saldoPorDevengar: 28300000.00,
+        saldoPorPagar: 20800000.00,
+        porcentajeEjecucion: 76.0,
+        estadoEjecucion: 'Alerta Desvío',
+        observaciones: 'Retraso de RD$ 20.8M en libramientos devengados por falta de cuota trimestral en Tesorería. Riesgo de suspensión de entregas por distribuidores.',
+        fuenteRectorUrl: 'https://digepres.gob.do/informes-ejecucion-gasto',
+        fechaCorte: '2026-02-15'
+      },
+      {
+        id: 2,
+        expedienteId: 3,
+        pais: 'República Dominicana',
+        entePresupuestario: 'DIGEPRES / DIGECOG / SIGEF',
+        codigoObjetoGasto: '2.2',
+        denominacion: 'Servicios No Personales (Mantenimiento Aceleradores Lineales y Tomógrafos)',
+        tipo: 'Gasto',
+        presupuestoAprobado: 45000000.00,
+        presupuestoModificado: 58500000.00,
+        preventivo: 58500000.00,
+        comprometido: 58500000.00,
+        devengado: 49500000.00,
+        pagado: 38000000.00,
+        saldoPorComprometer: 0.00,
+        saldoPorDevengar: 9000000.00,
+        saldoPorPagar: 11500000.00,
+        porcentajeEjecucion: 84.62,
+        estadoEjecucion: 'Sobreejecución',
+        observaciones: 'Sobreejecución por adenda contractual de RD$ 11.5M (+41.07%) que sobrepasa el 25% legal permitido por la Ley 340-06.',
+        fuenteRectorUrl: 'https://digepres.gob.do/ejecucion-presupuestaria',
+        fechaCorte: '2026-02-15'
+      },
+      {
+        id: 3,
+        expedienteId: 3,
+        pais: 'República Dominicana',
+        entePresupuestario: 'DIGEPRES / DIGECOG / SIGEF',
+        codigoObjetoGasto: '2.1',
+        denominacion: 'Servicios Personales (Sueldos Personal Médico y Oncológico)',
+        tipo: 'Gasto',
+        presupuestoAprobado: 210000000.00,
+        presupuestoModificado: 210000000.00,
+        preventivo: 210000000.00,
+        comprometido: 198000000.00,
+        devengado: 198000000.00,
+        pagado: 198000000.00,
+        saldoPorComprometer: 12000000.00,
+        saldoPorDevengar: 0.00,
+        saldoPorPagar: 0.00,
+        porcentajeEjecucion: 94.29,
+        estadoEjecucion: 'Normal',
+        observaciones: 'Ejecución acorde a la programación trimestral y validada en SASP/MAP.',
+        fuenteRectorUrl: 'https://map.gob.do/sasp',
+        fechaCorte: '2026-02-15'
+      },
+      {
+        id: 4,
+        expedienteId: 3,
+        pais: 'República Dominicana',
+        entePresupuestario: 'DIGEPRES / DIGECOG / SIGEF',
+        codigoObjetoGasto: '2.6',
+        denominacion: 'Bienes Muebles e Inmuebles (Equipamiento de Imagenología y Radioterapia)',
+        tipo: 'Gasto',
+        presupuestoAprobado: 85000000.00,
+        presupuestoModificado: 85000000.00,
+        preventivo: 40000000.00,
+        comprometido: 25000000.00,
+        devengado: 18000000.00,
+        pagado: 18000000.00,
+        saldoPorComprometer: 60000000.00,
+        saldoPorDevengar: 7000000.00,
+        saldoPorPagar: 0.00,
+        porcentajeEjecucion: 21.18,
+        estadoEjecucion: 'Subejecución',
+        observaciones: 'Subejecución crítica del 21.18%. Licitaciones de renovación tecnológica demoradas en comité de compras.',
+        fuenteRectorUrl: 'https://digecog.gob.do/activos',
+        fechaCorte: '2026-02-15'
+      },
+      {
+        id: 5,
+        expedienteId: 3,
+        pais: 'República Dominicana',
+        entePresupuestario: 'DIGEPRES / DIGECOG / SIGEF',
+        codigoObjetoGasto: '2.7',
+        denominacion: 'Obras en Infraestructura (Adecuación Búnker de Radiación y Blindaje)',
+        tipo: 'Gasto',
+        presupuestoAprobado: 35000000.00,
+        presupuestoModificado: 42000000.00,
+        preventivo: 42000000.00,
+        comprometido: 42000000.00,
+        devengado: 36000000.00,
+        pagado: 28500000.00,
+        saldoPorComprometer: 0.00,
+        saldoPorDevengar: 6000000.00,
+        saldoPorPagar: 7500000.00,
+        porcentajeEjecucion: 85.71,
+        estadoEjecucion: 'Normal',
+        observaciones: 'Obras con informe técnico preliminar de la Comisión Nacional de Energía (CNE).',
+        fuenteRectorUrl: 'https://hacienda.gob.do/sigef',
+        fechaCorte: '2026-02-15'
+      },
+      {
+        id: 6,
+        expedienteId: 3,
+        pais: 'República Dominicana',
+        entePresupuestario: 'DIGEPRES / DIGECOG / SIGEF',
+        codigoObjetoGasto: '1.4',
+        denominacion: 'Ingresos por Transferencias del Gobierno Central (Presupuesto General del Estado)',
+        tipo: 'Ingreso',
+        presupuestoAprobado: 460000000.00,
+        presupuestoModificado: 505000000.00,
+        preventivo: 505000000.00,
+        comprometido: 505000000.00,
+        devengado: 480000000.00,
+        pagado: 480000000.00,
+        saldoPorComprometer: 0.00,
+        saldoPorDevengar: 25000000.00,
+        saldoPorPagar: 0.00,
+        porcentajeEjecucion: 95.05,
+        estadoEjecucion: 'Normal',
+        observaciones: 'Transferencias recibidas conforme al cronograma de la Tesorería Nacional.',
+        fuenteRectorUrl: 'https://digepres.gob.do',
+        fechaCorte: '2026-02-15'
+      }
+    ],
+    evidenceFolders: [
+      {
+        id: 'evidence/hallazgo_0001',
+        hallazgoId: 1,
+        hallazgoTitulo: 'Fraccionamiento de compras para eludir proceso de Licitación Pública',
+        codigoExpediente: 'AUD-2026-001',
+        fuente: 'Portal Transaccional DGCP y DAF MOPC',
+        fecha: '2026-01-22',
+        url: 'https://comprasdominicana.gob.do/procesos/MOPC-2025-081',
+        sha256: '9a8b7c6d5e4f3a2b1c0d9e8f7a6b5c4d3e2f1a0b9c8d7e6f5a4b3c2d1e0f9a8b',
+        subcarpetas: {
+          capturas: [
+            { id: 'cap-01', nombre: 'captura_portal_dgcp_fraccionamiento.png', tipo: 'captura', url: 'https://comprasdominicana.gob.do/procesos/MOPC-2025-081', sha256: 'a1b2c3d4e5f60718293a4b5c6d7e8f90123456789abcdef0123456789abcdef0', fecha: '2026-01-22' }
+          ],
+          pdf: [
+            { id: 'pdf-01', nombre: 'ordenes_compra_fraccionadas_1_a_8.pdf', tipo: 'pdf', tamano: '4.8 MB', sha256: 'b2c3d4e5f6a10718293a4b5c6d7e8f90123456789abcdef0123456789abcdef1', fecha: '2026-01-22' }
+          ],
+          ocr: [
+            { id: 'ocr-01', nombre: 'extraccion_ocr_ordenes_compra.txt', tipo: 'ocr', texto: 'Orden de Compra No. 81 a 88... Monto RD$ 2,450,000.00 cada una... Proveedor Consorcio Asfáltico... Objeto Idéntico: Suministro de mezcla asfáltica caliente.', sha256: 'c3d4e5f6a1b20718293a4b5c6d7e8f90123456789abcdef0123456789abcdef2', fecha: '2026-01-22' }
+          ],
+          links: [
+            { id: 'lnk-01', titulo: 'Portal Transaccional DGCP - Consulta MOPC-DAF-CM-2025-019', url: 'https://comprasdominicana.gob.do/procesos/MOPC-2025-081', descripcion: 'Enlace directo al expediente digital de compras menores en DGCP', fecha: '2026-01-22' }
+          ],
+          reportes: [
+            { id: 'rep-01', nombre: 'ficha_pericial_hallazgo_0001.docx', tipo: 'reporte', tamano: '320 KB', sha256: 'd4e5f6a1b2c30718293a4b5c6d7e8f90123456789abcdef0123456789abcdef3', fecha: '2026-01-23' }
+          ]
+        },
+        metadata: {
+          hallazgo: '0001',
+          entidad: 'Ministerio de Obras Públicas y Comunicaciones (MOPC)',
+          fuente: 'DGCP / DAF',
+          fecha: '2026-01-22',
+          url: 'https://comprasdominicana.gob.do/procesos/MOPC-2025-081',
+          responsable: 'Lic. Pedro Baldera',
+          clasificacion: 'FINANCIERO',
+          tipoControl: 'HALLAZGO_ADMINISTRATIVO',
+          dictamenPericial: 'Fraccionamiento sistemático comprobado con elusión de licitación pública nacional.'
+        }
+      },
+      {
+        id: 'evidence/hallazgo_0004',
+        hallazgoId: 4,
+        hallazgoTitulo: 'INCART: Adenda al Contrato de Mantenimiento Integral de Aceleradores Lineales (LINAC) excede el 25% del límite legal',
+        codigoExpediente: 'AUD-2026-INCART',
+        fuente: 'Portal Transparencia INCART (https://www.incart.gob.do/transparencia) y DGCP',
+        fecha: '2026-02-12',
+        url: 'https://www.incart.gob.do/transparencia/compras-y-contrataciones/procesos-de-compras',
+        sha256: 'e5f6a1b2c3d40718293a4b5c6d7e8f90123456789abcdef0123456789abcdef4',
+        subcarpetas: {
+          capturas: [
+            { id: 'cap-incart-01', nombre: 'portal_transparencia_incart_contrato_linac.png', tipo: 'captura', url: 'https://www.incart.gob.do/transparencia', sha256: 'f6a1b2c3d4e50718293a4b5c6d7e8f90123456789abcdef0123456789abcdef5', fecha: '2026-02-12' },
+            { id: 'cap-incart-02', nombre: 'adenda_no1_incart_contr018.png', tipo: 'captura', url: 'https://comprasdominicana.gob.do', sha256: '0718293a4b5c6d7e8f90123456789abcdef0123456789abcdef0123456789ab6', fecha: '2026-02-12' }
+          ],
+          pdf: [
+            { id: 'pdf-incart-01', nombre: 'Pliego_Condiciones_INCART_LINAC_2025.pdf', tipo: 'pdf', tamano: '3.2 MB', sha256: '18293a4b5c6d7e8f90123456789abcdef0123456789abcdef0123456789ab607', fecha: '2026-02-12' },
+            { id: 'pdf-incart-02', nombre: 'Contrato_CONTR_INCART_2025_018_y_Adenda01.pdf', tipo: 'pdf', tamano: '5.1 MB', sha256: '293a4b5c6d7e8f90123456789abcdef0123456789abcdef0123456789ab60718', fecha: '2026-02-12' }
+          ],
+          ocr: [
+            { id: 'ocr-incart-01', nombre: 'analisis_ocr_adenda_porcentaje.txt', tipo: 'ocr', texto: 'Monto Original Contrato: RD$ 28,000,000.00... Monto Adenda No. 1: RD$ 11,500,000.00... Variación Porcentual: +41.07%... Límite Máximo Ley 340-06 Art. 31: 25.00%... Exceso Ilegal: RD$ 4,500,000.00.', sha256: '3a4b5c6d7e8f90123456789abcdef0123456789abcdef0123456789ab6071829', fecha: '2026-02-12' }
+          ],
+          links: [
+            { id: 'lnk-incart-01', titulo: 'Portal de Transparencia INCART - Compras', url: 'https://www.incart.gob.do/transparencia/compras-y-contrataciones/procesos-de-compras', descripcion: 'Página oficial de contrataciones del Instituto Nacional del Cáncer', fecha: '2026-02-12' },
+            { id: 'lnk-incart-02', titulo: 'DGCP Portal Transaccional - Proceso INCART-CCC-LPN-2025-0004', url: 'https://comprasdominicana.gob.do', descripcion: 'Ficha del proceso oficial en la Dirección General de Contrataciones Públicas', fecha: '2026-02-12' }
+          ],
+          reportes: [
+            { id: 'rep-incart-01', nombre: 'dictamen_pericial_adenda_incart_0004.docx', tipo: 'reporte', tamano: '410 KB', sha256: '4b5c6d7e8f90123456789abcdef0123456789abcdef0123456789ab60718293a', fecha: '2026-02-13' }
+          ]
+        },
+        metadata: {
+          hallazgo: '0004',
+          entidad: 'Instituto Nacional del Cáncer Rosa Emilia Sánchez Pérez de Tavares (INCART)',
+          fuente: 'Portal Transparencia INCART / DGCP',
+          fecha: '2026-02-12',
+          url: 'https://www.incart.gob.do/transparencia',
+          responsable: 'Lic. Pedro Baldera',
+          clasificacion: 'LEGAL',
+          tipoControl: 'HALLAZGO_ADMINISTRATIVO',
+          dictamenPericial: 'Infracción expresa del límite legal del 25% estipulado en el Art. 31 de la Ley 340-06, configurando nulidad de pleno derecho del incremento excesivo.'
+        }
+      },
+      {
+        id: 'evidence/hallazgo_0005',
+        hallazgoId: 5,
+        hallazgoTitulo: 'INCART: Discrepancia sustancial entre Pliego de Condiciones / TDR y Contrato Adjudicado en Licitación de Fármacos Oncológicos',
+        codigoExpediente: 'AUD-2026-INCART',
+        fuente: 'Portal Transparencia INCART (https://www.incart.gob.do/transparencia) y Portal Transaccional DGCP',
+        fecha: '2026-02-14',
+        url: 'https://www.incart.gob.do/transparencia/compras-y-contrataciones',
+        sha256: '5c6d7e8f90123456789abcdef0123456789abcdef0123456789ab60718293a4b',
+        subcarpetas: {
+          capturas: [
+            { id: 'cap-incart-03', nombre: 'tdr_pliego_farmacos_cadena_frio.png', tipo: 'captura', url: 'https://www.incart.gob.do/transparencia', sha256: '6d7e8f90123456789abcdef0123456789abcdef0123456789ab60718293a4b5c', fecha: '2026-02-14' },
+            { id: 'cap-incart-04', nombre: 'contrato_firmado_omision_garantias.png', tipo: 'captura', url: 'https://comprasdominicana.gob.do', sha256: '7e8f90123456789abcdef0123456789abcdef0123456789ab60718293a4b5c6d', fecha: '2026-02-14' }
+          ],
+          pdf: [
+            { id: 'pdf-incart-03', nombre: 'Pliego_Definitivo_INCART_CCC_LPN_2025_0012.pdf', tipo: 'pdf', tamano: '6.4 MB', sha256: '8f90123456789abcdef0123456789abcdef0123456789ab60718293a4b5c6d7e', fecha: '2026-02-14' },
+            { id: 'pdf-incart-04', nombre: 'Contrato_CONTR_INCART_2025_032_Farmacos.pdf', tipo: 'pdf', tamano: '4.9 MB', sha256: '90123456789abcdef0123456789abcdef0123456789ab60718293a4b5c6d7e8f', fecha: '2026-02-14' }
+          ],
+          ocr: [
+            { id: 'ocr-incart-02', nombre: 'cotejo_pericial_tdr_vs_contrato.txt', tipo: 'ocr', texto: 'Cláusula Térmica Pliego: Exigencia mandatoria de registro térmico 2°C a 8°C con data-loggers calibrados... Contrato firmado: Se omite cláusula y se adiciona anticipo del 20% sin póliza de garantía... Inobservancia sustancial del pliego.', sha256: '0123456789abcdef0123456789abcdef0123456789ab60718293a4b5c6d7e8f90', fecha: '2026-02-14' }
+          ],
+          links: [
+            { id: 'lnk-incart-03', titulo: 'Portal de Transparencia INCART - Licitación LPN-2025-0012', url: 'https://www.incart.gob.do/transparencia/compras-y-contrataciones', descripcion: 'Expediente de fármacos oncológicos y citostáticos de alto costo', fecha: '2026-02-14' }
+          ],
+          reportes: [
+            { id: 'rep-incart-02', nombre: 'informe_indicios_penales_pepca_incart.docx', tipo: 'reporte', tamano: '530 KB', sha256: '123456789abcdef0123456789abcdef0123456789ab60718293a4b5c6d7e8f901', fecha: '2026-02-15' }
+          ]
+        },
+        metadata: {
+          hallazgo: '0005',
+          entidad: 'Instituto Nacional del Cáncer Rosa Emilia Sánchez Pérez de Tavares (INCART)',
+          fuente: 'Portal Transparencia INCART / DGCP',
+          fecha: '2026-02-14',
+          url: 'https://www.incart.gob.do/transparencia',
+          responsable: 'Lic. Pedro Baldera',
+          clasificacion: 'LEGAL',
+          tipoControl: 'POSIBLE_OBSERVACION_PENAL_JUDICIAL',
+          dictamenPericial: 'Grave alteración de las cláusulas esenciales de los pliegos de condiciones en el contrato de adjudicación con indicios de favorecimiento ilícito y riesgo sanitario severo.'
+        }
+      }
+    ],
+    procurementAudits: [
+      {
+        id: 'PROC-INCART-01',
+        codigoProceso: 'INCART-CCC-LPN-2025-0004',
+        entidad: 'Instituto Nacional del Cáncer Rosa Emilia Sánchez Pérez de Tavares (INCART)',
+        objeto: 'Mantenimiento Preventivo y Correctivo Integral de Aceleradores Lineales (LINAC)',
+        portalTransparenciaUrl: 'https://www.incart.gob.do/transparencia/compras-y-contrataciones',
+        portalDgcpUrl: 'https://comprasdominicana.gob.do/portal/consulta?id=INCART-2025-0004',
+        pliegoTdr: {
+          especificacionesClave: 'Mantenimiento trimestral con calibración dosimétrica y certificación de seguridad radiológica por perito físico-médico.',
+          montoEstimadoPliego: 28000000.00,
+          plazoMeses: 12,
+          requerimientoGarantia: 'Póliza de Fiel Cumplimiento del 10% y Responsabilidad Civil Radiológica por US$ 500,000.'
+        },
+        contratoAdjudicado: {
+          proveedorAdjudicado: 'Tecnología Médica Especializada del Caribe, SRL',
+          rnc: '131-88992-1',
+          montoAdjudicado: 28000000.00,
+          fechaContrato: '2025-05-10',
+          plazoContratoMeses: 12
+        },
+        adendas: [
+          {
+            numeroAdenda: 'Adenda No. 1',
+            fecha: '2025-11-18',
+            montoAdicional: 11500000.00,
+            porcentajeSobreOriginal: 41.07,
+            justificacion: 'Inclusión sobrevenida de repuestos mayores (magnetrón, cañón de electrones y sistema de refrigeración de helio líquido).',
+            aprobadaPorOrganoRector: false
+          }
+        ],
+        montoFinalAcumulado: 39500000.00,
+        porcentajeTotalAdendas: 41.07,
+        excedeLimiteLegal25Pct: true,
+        discrepanciaPliegoVsContrato: 'El pliego solo cubría horas técnicas de mantenimiento preventivo. La adenda introdujo repuestos de alto costo superando el 25% legal permitido (41.07%), lo que exigía un nuevo proceso licitatorio.',
+        alertaFraccionamiento: false,
+        clasificacionAspecto: 'LEGAL',
+        tipoControl: 'HALLAZGO_ADMINISTRATIVO',
+        estadoAuditoria: 'Con Hallazgo Formal',
+        carpetaEvidenciaId: 'evidence/hallazgo_0004'
+      },
+      {
+        id: 'PROC-INCART-02',
+        codigoProceso: 'INCART-CCC-LPN-2025-0012',
+        entidad: 'Instituto Nacional del Cáncer Rosa Emilia Sánchez Pérez de Tavares (INCART)',
+        objeto: 'Suministro de Fármacos Oncológicos de Alto Costo y Citostáticos',
+        portalTransparenciaUrl: 'https://www.incart.gob.do/transparencia/compras-y-contrataciones',
+        portalDgcpUrl: 'https://comprasdominicana.gob.do/portal/consulta?id=INCART-2025-0012',
+        pliegoTdr: {
+          especificacionesClave: 'Trastuzumab 440mg, Paclitaxel 300mg, Pembrolizumab 100mg con cadena de frío certificada de 2°C a 8°C.',
+          montoEstimadoPliego: 45800000.00,
+          plazoMeses: 12,
+          requerimientoGarantia: 'Póliza del 10% y penalidad del 1% por día de retraso. Prohibición expresa de pagos por anticipo.'
+        },
+        contratoAdjudicado: {
+          proveedorAdjudicado: 'Pharma Onco Dominicana, SA',
+          rnc: '101-77665-4',
+          montoAdjudicado: 45800000.00,
+          fechaContrato: '2025-06-20',
+          plazoContratoMeses: 12
+        },
+        adendas: [],
+        montoFinalAcumulado: 45800000.00,
+        porcentajeTotalAdendas: 0,
+        excedeLimiteLegal25Pct: false,
+        discrepanciaPliegoVsContrato: 'El contrato firmado eliminó la penalidad por desabastecimiento hospitalario de pacientes con cáncer, suprimió la obligatoriedad de entrega con data-logger térmico y concedió un anticipo ilícito del 20% sin garantía bancaria.',
+        alertaFraccionamiento: false,
+        clasificacionAspecto: 'LEGAL',
+        tipoControl: 'POSIBLE_OBSERVACION_PENAL_JUDICIAL',
+        estadoAuditoria: 'Con Hallazgo Formal',
+        carpetaEvidenciaId: 'evidence/hallazgo_0005'
+      },
+      {
+        id: 'PROC-MOPC-01',
+        codigoProceso: 'MOPC-CCC-CP-2025-004',
+        entidad: 'Ministerio de Obras Públicas y Comunicaciones (MOPC)',
+        objeto: 'Reconstrucción de Drenaje Pluvial y Aceras Avenida Perimetral Norte',
+        portalTransparenciaUrl: 'https://mopc.gob.do/transparencia/compras-y-licitaciones',
+        portalDgcpUrl: 'https://comprasdominicana.gob.do',
+        pliegoTdr: {
+          especificacionesClave: 'Tuberías de hormigón armado de 48 pulgadas, pozos filtrantes y reposición de pavimento.',
+          montoEstimadoPliego: 34500000.00,
+          plazoMeses: 6,
+          requerimientoGarantia: 'Fianza de Fiel Cumplimiento 10% y Garantía de Vicios Ocultos 2 años.'
+        },
+        contratoAdjudicado: {
+          proveedorAdjudicado: 'Constructora Caribe & Asociados, SRL',
+          rnc: '131-45678-9',
+          montoAdjudicado: 34500000.00,
+          fechaContrato: '2025-07-01',
+          plazoContratoMeses: 6
+        },
+        adendas: [
+          {
+            numeroAdenda: 'Adenda de Tiempo No. 1',
+            fecha: '2025-12-15',
+            montoAdicional: 0,
+            porcentajeSobreOriginal: 0,
+            justificacion: 'Extensión de plazo por lluvias torrenciales y afectación freática.',
+            aprobadaPorOrganoRector: true
+          }
+        ],
+        montoFinalAcumulado: 34500000.00,
+        porcentajeTotalAdendas: 0,
+        excedeLimiteLegal25Pct: false,
+        discrepanciaPliegoVsContrato: 'Se tramitaron libramientos de pago sin verificar la consignación de la fianza bancaria definitiva requerida por el pliego.',
+        alertaFraccionamiento: false,
+        clasificacionAspecto: 'OBRAS',
+        tipoControl: 'DEBILIDAD_CONTROL_INTERNO',
+        estadoAuditoria: 'Con Hallazgo Formal',
+        carpetaEvidenciaId: 'evidence/hallazgo_0002'
+      }
+    ],
+    checkpoint: {
+      lastUpdated: new Date().toISOString(),
+      totalObservacionesAlDia: 5,
+      pendientesDeProcesar: 2,
+      tareasPendientes: [
+        {
+          id: 'TASK-INCART-01',
+          tarea: 'Cotejo pericial de libramientos en Hacienda vs Adenda No. 1 de Aceleradores Lineales en INCART',
+          modulo: 'Compras / Tesorería',
+          estado: 'Pendiente',
+          prioridad: 'Crítica',
+          fechaProgramada: new Date().toISOString().split('T')[0]
+        },
+        {
+          id: 'TASK-INCART-02',
+          tarea: 'Inspección de almacenamiento y verificación de cadena de frío en farmacia oncológica del INCART',
+          modulo: 'Compras / Sanitario',
+          estado: 'En Proceso',
+          prioridad: 'Alta',
+          fechaProgramada: new Date().toISOString().split('T')[0]
+        }
+      ],
+      autoResumeEnabled: true,
+      lastSyncStatus: 'Checkpoint activo: sincronizado con base pericial y órganos rectores.',
+      versionSistema: '2.8.0-Enterprise-Pericial'
+    }
   };
 }
 
@@ -868,10 +1541,35 @@ class DatabaseManager {
           if (!parsed.workflows) parsed.workflows = initial.workflows;
           if (!parsed.settings) parsed.settings = initial.settings;
           if (!parsed.customPlugins) parsed.customPlugins = initial.customPlugins;
+          if (!parsed.budgetExecution) parsed.budgetExecution = initial.budgetExecution;
+          if (!parsed.evidenceFolders) parsed.evidenceFolders = initial.evidenceFolders;
+          if (!parsed.procurementAudits) parsed.procurementAudits = initial.procurementAudits;
+          if (!parsed.checkpoint) parsed.checkpoint = initial.checkpoint;
 
-          // Ensure hallazgos have workflowStatus
+          // Merge initial INCART expediente if not present
+          const hasIncartExp = parsed.expedientes.some((e: any) => e.codigo === 'AUD-2026-INCART');
+          if (!hasIncartExp) {
+            const incartExp = initial.expedientes.find(e => e.codigo === 'AUD-2026-INCART');
+            if (incartExp) parsed.expedientes.push(incartExp);
+          }
+
+          // Merge initial INCART hallazgos if not present
+          const hasIncartHallazgo4 = parsed.hallazgos.some((h: any) => h.id === 4);
+          if (!hasIncartHallazgo4) {
+            const h4 = initial.hallazgos.find(h => h.id === 4);
+            if (h4) parsed.hallazgos.push(h4);
+          }
+          const hasIncartHallazgo5 = parsed.hallazgos.some((h: any) => h.id === 5);
+          if (!hasIncartHallazgo5) {
+            const h5 = initial.hallazgos.find(h => h.id === 5);
+            if (h5) parsed.hallazgos.push(h5);
+          }
+
+          // Ensure hallazgos have workflowStatus and classifications
           parsed.hallazgos.forEach((h: any) => {
             if (!h.workflowStatus) h.workflowStatus = 'BORRADOR';
+            if (!h.clasificacion) h.clasificacion = 'FINANCIERO';
+            if (!h.tipoControl) h.tipoControl = 'HALLAZGO_ADMINISTRATIVO';
           });
           // Ensure evidencias have clasificacion and versionActual
           parsed.evidencias.forEach((ev: any) => {

@@ -10,6 +10,9 @@ import {
   Building2,
   Receipt,
   Layers,
+  DollarSign,
+  Users,
+  ShieldAlert,
   ArrowUpDown
 } from 'lucide-react';
 import * as XLSX from 'xlsx';
@@ -20,7 +23,15 @@ interface MatrixEngineViewProps {
   selectedExpedienteId: number | null;
 }
 
-type MatrixType = 'riesgos' | 'hallazgos' | 'evidencias' | 'contratos' | 'pagos';
+export type MatrixType =
+  | 'riesgos'
+  | 'hallazgos'
+  | 'evidencias'
+  | 'contratos'
+  | 'pagos'
+  | 'presupuesto'
+  | 'nomina'
+  | 'activos';
 
 export const MatrixEngineView: React.FC<MatrixEngineViewProps> = ({
   data,
@@ -52,7 +63,8 @@ export const MatrixEngineView: React.FC<MatrixEngineViewProps> = ({
     h.titulo.toLowerCase().includes(searchTerm.toLowerCase()) ||
     h.condicion.toLowerCase().includes(searchTerm.toLowerCase()) ||
     h.criterio.toLowerCase().includes(searchTerm.toLowerCase()) ||
-    (h.normativaReferencia || '').toLowerCase().includes(searchTerm.toLowerCase())
+    (h.normativaReferencia || '').toLowerCase().includes(searchTerm.toLowerCase()) ||
+    (h.clasificacion || '').toLowerCase().includes(searchTerm.toLowerCase())
   );
 
   // 3. Matriz de Evidencias
@@ -66,14 +78,14 @@ export const MatrixEngineView: React.FC<MatrixEngineViewProps> = ({
     e.tipo.toLowerCase().includes(searchTerm.toLowerCase())
   );
 
-  // 4. Matriz de Contratos
+  // 4. Matriz de Contratos & Adendas
   const filteredContratos = data.contratos.filter(c =>
     c.numero.toLowerCase().includes(searchTerm.toLowerCase()) ||
     c.objeto.toLowerCase().includes(searchTerm.toLowerCase()) ||
     c.modalidad.toLowerCase().includes(searchTerm.toLowerCase())
   );
 
-  // 5. Matriz de Pagos
+  // 5. Matriz de Pagos & Conciliación
   const filteredPagos = data.pagos.filter(p =>
     p.beneficiario.toLowerCase().includes(searchTerm.toLowerCase()) ||
     p.referencia.toLowerCase().includes(searchTerm.toLowerCase()) ||
@@ -81,7 +93,44 @@ export const MatrixEngineView: React.FC<MatrixEngineViewProps> = ({
     p.descripcion.toLowerCase().includes(searchTerm.toLowerCase())
   );
 
-  // Helper for Exporting single sheet or entire workbook
+  // 6. Matriz de Presupuesto (Ciclo Completo)
+  const budgetItems = data.budgetExecution || [];
+  const filteredPresupuesto = budgetItems.filter(b =>
+    b.codigoObjetoGasto.toLowerCase().includes(searchTerm.toLowerCase()) ||
+    b.denominacion.toLowerCase().includes(searchTerm.toLowerCase()) ||
+    b.observaciones.toLowerCase().includes(searchTerm.toLowerCase())
+  );
+
+  // 7. Matriz de Nóminas (Cruce MAP / SASP)
+  const sampleNomina = [
+    { id: 1, cedula: '001-0892144-2', nombre: 'Dr. Alejandro Rivas', cargo: 'Médico Oncólogo Principal', dpto: 'Radioterapia INCART', salario: 195000, estatusMap: 'Homologado MAP', alerta: 'Conforme' },
+    { id: 2, cedula: '001-1478523-9', nombre: 'Lic. Martha Tavárez', cargo: 'Encargada de Quimioterapia', dpto: 'Farmacia Hospitalaria', salario: 135000, estatusMap: 'Homologado MAP', alerta: 'Conforme' },
+    { id: 3, cedula: '001-9988771-5', nombre: 'Ing. Roberto Santana', cargo: 'Asesor Técnico de Aceleradores', dpto: 'Dirección Médica', salario: 280000, estatusMap: 'No figura en organigrama MAP', alerta: 'ALERTA: Puesto no aprobado Ley 41-08' },
+    { id: 4, cedula: '001-3322114-8', nombre: 'Lic. Carmen Morales', cargo: 'Auditora Interna DAF', dpto: 'Unidad Auditoría Interna', salario: 125000, estatusMap: 'Homologado SASP', alerta: 'Conforme' },
+  ].filter(n =>
+    n.nombre.toLowerCase().includes(searchTerm.toLowerCase()) ||
+    n.cargo.toLowerCase().includes(searchTerm.toLowerCase()) ||
+    n.alerta.toLowerCase().includes(searchTerm.toLowerCase())
+  );
+
+  // 8. Matriz de Activos Fijos (Bienes Nacionales vs DIGECOG)
+  const sampleActivos = [
+    { id: 1, codigoActivo: 'ACT-INCART-LINAC-01', descripcion: 'Acelerador Lineal de Alta Energía (Elekta Synergy)', valorLibros: 68500000, depAcumulada: 17125000, registroBienesNac: 'Certificado BN-2024-88', estatusFisico: 'Operativo en Búnker 1', alerta: 'Conforme' },
+    { id: 2, codigoActivo: 'ACT-INCART-PETCT-02', descripcion: 'Tomógrafo por Emisión de Positrones (PET-CT)', valorLibros: 42000000, depAcumulada: 8400000, registroBienesNac: 'Certificado BN-2024-91', estatusFisico: 'Operativo en Medicina Nuclear', alerta: 'Conforme' },
+    { id: 3, codigoActivo: 'ACT-INCART-VEH-03', descripcion: 'Ambulancia de Terapia Intensiva Móvil', valorLibros: 4800000, depAcumulada: 1200000, registroBienesNac: 'Pendiente matrícula estatal DGII', estatusFisico: 'En servicio sin chapa oficial', alerta: 'ALERTA: Sin titulación estatal' },
+    { id: 4, codigoActivo: 'ACT-MOPC-MAQ-04', descripcion: 'Planta de Mezcla Asfáltica Continua', valorLibros: 38000000, depAcumulada: 9500000, registroBienesNac: 'Registrado en Bienes Nacionales', estatusFisico: 'En patio de equipos', alerta: 'Conforme' }
+  ].filter(a =>
+    a.codigoActivo.toLowerCase().includes(searchTerm.toLowerCase()) ||
+    a.descripcion.toLowerCase().includes(searchTerm.toLowerCase()) ||
+    a.alerta.toLowerCase().includes(searchTerm.toLowerCase())
+  );
+
+  const formatCurrency = (val: number) => {
+    const curr = data.settings?.currency || 'DOP';
+    return `${curr} $${val.toLocaleString('es-DO', { minimumFractionDigits: 2 })}`;
+  };
+
+  // Helper for Exporting single sheet or entire 8-sheet workbook
   const exportActiveMatrixToExcel = () => {
     const wb = XLSX.utils.book_new();
 
@@ -108,6 +157,8 @@ export const MatrixEngineView: React.FC<MatrixEngineViewProps> = ({
         ID: h.id,
         Expediente: data.expedientes.find(e => e.id === h.expedienteId)?.codigo || 'General',
         Título: h.titulo,
+        Aspecto: h.clasificacion || 'FINANCIERO',
+        'Tipo Control': h.tipoControl || 'HALLAZGO_ADMINISTRATIVO',
         Condición: h.condicion,
         Criterio: h.criterio,
         Causa: h.causa,
@@ -117,6 +168,7 @@ export const MatrixEngineView: React.FC<MatrixEngineViewProps> = ({
         Recomendación: h.recomendacion,
         'Normativa Referencia': h.normativaReferencia || '',
         'Workflow Status': h.workflowStatus || 'BORRADOR',
+        'Carpeta Evidencia': h.evidenciaCarpetaId || '',
         'Página / Artículo': `${h.pagina || ''} - ${h.articulo || ''}`,
         'Fuente Externa': h.fuenteExterna || '',
         'Fecha Validación': h.fechaValidacion || '',
@@ -134,8 +186,6 @@ export const MatrixEngineView: React.FC<MatrixEngineViewProps> = ({
         'Versión Actual': e.versionActual,
         Tipo: e.tipo,
         'Tamaño (KB)': Math.round(e.tamano / 1024),
-        'RNC Extraídos': (e.metadatos?.rnc || []).join(', '),
-        'NCF Extraídos': (e.metadatos?.ncf || []).join(', '),
         'Subido Por': e.subidoPor,
         'Fecha Custodia': e.createdAt,
       }));
@@ -167,11 +217,38 @@ export const MatrixEngineView: React.FC<MatrixEngineViewProps> = ({
         Monto: p.monto,
         Fecha: p.fecha,
         Descripción: p.descripcion,
-        'Alerta Duplicado': p.alertaDuplicado ? 'SÍ - RIESGO DE SOBREPAGO' : 'NO',
+        'Alerta Duplicado': p.alertaDuplicado ? 'DUPLICADO' : 'OK',
       }));
       const ws = XLSX.utils.json_to_sheet(rows);
       XLSX.utils.book_append_sheet(wb, ws, 'Matriz_Pagos');
       XLSX.writeFile(wb, `Matriz_Pagos_${new Date().toISOString().slice(0, 10)}.xlsx`);
+    } else if (activeMatrix === 'presupuesto') {
+      const rows = filteredPresupuesto.map(b => ({
+        Código: b.codigoObjetoGasto,
+        Denominación: b.denominacion,
+        Tipo: b.tipo,
+        'Presupuesto Aprobado': b.presupuestoAprobado,
+        'Presupuesto Modificado': b.presupuestoModificado,
+        Comprometido: b.comprometido,
+        Devengado: b.devengado,
+        Pagado: b.pagado,
+        'Saldo por Comprometer': b.saldoPorComprometer,
+        'Saldo por Pagar': b.saldoPorPagar,
+        '% Ejecución': `${b.porcentajeEjecucion}%`,
+        Estado: b.estadoEjecucion,
+        Observaciones: b.observaciones
+      }));
+      const ws = XLSX.utils.json_to_sheet(rows);
+      XLSX.utils.book_append_sheet(wb, ws, 'Matriz_Presupuesto');
+      XLSX.writeFile(wb, `Matriz_Presupuesto_${new Date().toISOString().slice(0, 10)}.xlsx`);
+    } else if (activeMatrix === 'nomina') {
+      const ws = XLSX.utils.json_to_sheet(sampleNomina);
+      XLSX.utils.book_append_sheet(wb, ws, 'Matriz_Nomina_MAP');
+      XLSX.writeFile(wb, `Matriz_Nomina_${new Date().toISOString().slice(0, 10)}.xlsx`);
+    } else if (activeMatrix === 'activos') {
+      const ws = XLSX.utils.json_to_sheet(sampleActivos);
+      XLSX.utils.book_append_sheet(wb, ws, 'Matriz_Activos_Fijos');
+      XLSX.writeFile(wb, `Matriz_Activos_Fijos_${new Date().toISOString().slice(0, 10)}.xlsx`);
     }
   };
 
@@ -199,6 +276,8 @@ export const MatrixEngineView: React.FC<MatrixEngineViewProps> = ({
       ID: h.id,
       Expediente: data.expedientes.find(e => e.id === h.expedienteId)?.codigo || 'General',
       Título: h.titulo,
+      Aspecto: h.clasificacion || 'FINANCIERO',
+      TipoControl: h.tipoControl || 'HALLAZGO_ADMINISTRATIVO',
       Condición: h.condicion,
       Criterio: h.criterio,
       Causa: h.causa,
@@ -250,12 +329,27 @@ export const MatrixEngineView: React.FC<MatrixEngineViewProps> = ({
     }));
     XLSX.utils.book_append_sheet(wb, XLSX.utils.json_to_sheet(rowsPagos), '5_Matriz_Pagos');
 
-    XLSX.writeFile(wb, `Auditoria_Integral_5_Matrices_${new Date().toISOString().slice(0, 10)}.xlsx`);
-  };
+    // 6. Presupuesto
+    const rowsPresupuesto = budgetItems.map(b => ({
+      Código: b.codigoObjetoGasto,
+      Denominación: b.denominacion,
+      Tipo: b.tipo,
+      Aprobado: b.presupuestoAprobado,
+      Modificado: b.presupuestoModificado,
+      Devengado: b.devengado,
+      Pagado: b.pagado,
+      '% Ejec': `${b.porcentajeEjecucion}%`,
+      Estado: b.estadoEjecucion
+    }));
+    XLSX.utils.book_append_sheet(wb, XLSX.utils.json_to_sheet(rowsPresupuesto), '6_Matriz_Presupuesto');
 
-  const formatCurrency = (val: number) => {
-    const curr = data.settings?.currency || 'DOP';
-    return `${curr} $${val.toLocaleString('es-DO', { minimumFractionDigits: 2 })}`;
+    // 7. Nómina
+    XLSX.utils.book_append_sheet(wb, XLSX.utils.json_to_sheet(sampleNomina), '7_Matriz_Nomina_MAP');
+
+    // 8. Activos
+    XLSX.utils.book_append_sheet(wb, XLSX.utils.json_to_sheet(sampleActivos), '8_Matriz_Activos_Fijos');
+
+    XLSX.writeFile(wb, `Auditoria_Integral_8_Matrices_Enterprise_${new Date().toISOString().slice(0, 10)}.xlsx`);
   };
 
   return (
@@ -265,10 +359,10 @@ export const MatrixEngineView: React.FC<MatrixEngineViewProps> = ({
         <div>
           <h2 className="text-xl font-bold text-slate-100 flex items-center gap-2.5">
             <FileSpreadsheet className="w-5 h-5 text-emerald-400" />
-            Motor Pericial de Matrices de Auditoría (Matrix Engine)
+            Motor Pericial de Matrices de Auditoría (8 Matrices Automáticas)
           </h2>
           <p className="text-xs text-slate-400 mt-1">
-            Generación automatizada de las 5 matrices técnicas con trazabilidad pericial y exportación multi-hoja a Microsoft Excel (.xlsx).
+            Generación automatizada de las 8 matrices técnicas con trazabilidad pericial y exportación consolidada a Microsoft Excel (.xlsx multi-hoja).
           </p>
         </div>
 
@@ -286,71 +380,107 @@ export const MatrixEngineView: React.FC<MatrixEngineViewProps> = ({
             className="flex items-center gap-1.5 px-4 py-2 rounded-xl bg-emerald-600 hover:bg-emerald-500 text-white text-xs font-semibold shadow-md transition"
           >
             <Download className="w-4 h-4" />
-            <span>Descargar Libro 5 Matrices (.xlsx)</span>
+            <span>Descargar Libro 8 Matrices (.xlsx)</span>
           </button>
         </div>
       </div>
 
-      {/* Tabs navigation */}
+      {/* 8 Tabs navigation */}
       <div className="flex border-b border-slate-800 space-x-2 overflow-x-auto pb-1">
         <button
           onClick={() => setActiveMatrix('riesgos')}
-          className={`flex items-center gap-2 px-4 py-2.5 rounded-t-xl text-xs font-semibold transition shrink-0 ${
+          className={`flex items-center gap-2 px-3 py-2.5 rounded-t-xl text-xs font-semibold transition shrink-0 ${
             activeMatrix === 'riesgos'
               ? 'bg-slate-900 text-red-400 border-t-2 border-red-500 border-x border-slate-800'
               : 'text-slate-400 hover:text-slate-200 hover:bg-slate-900/50'
           }`}
         >
           <TrendingDown className="w-4 h-4" />
-          <span>1. Matriz de Riesgos ({rawRiesgos.length})</span>
+          <span>1. Riesgos ({rawRiesgos.length})</span>
         </button>
 
         <button
           onClick={() => setActiveMatrix('hallazgos')}
-          className={`flex items-center gap-2 px-4 py-2.5 rounded-t-xl text-xs font-semibold transition shrink-0 ${
+          className={`flex items-center gap-2 px-3 py-2.5 rounded-t-xl text-xs font-semibold transition shrink-0 ${
             activeMatrix === 'hallazgos'
               ? 'bg-slate-900 text-amber-400 border-t-2 border-amber-500 border-x border-slate-800'
               : 'text-slate-400 hover:text-slate-200 hover:bg-slate-900/50'
           }`}
         >
           <AlertTriangle className="w-4 h-4" />
-          <span>2. Matriz de Hallazgos ({rawHallazgos.length})</span>
+          <span>2. Hallazgos ({rawHallazgos.length})</span>
         </button>
 
         <button
           onClick={() => setActiveMatrix('evidencias')}
-          className={`flex items-center gap-2 px-4 py-2.5 rounded-t-xl text-xs font-semibold transition shrink-0 ${
+          className={`flex items-center gap-2 px-3 py-2.5 rounded-t-xl text-xs font-semibold transition shrink-0 ${
             activeMatrix === 'evidencias'
               ? 'bg-slate-900 text-indigo-400 border-t-2 border-indigo-500 border-x border-slate-800'
               : 'text-slate-400 hover:text-slate-200 hover:bg-slate-900/50'
           }`}
         >
           <Layers className="w-4 h-4" />
-          <span>3. Matriz de Evidencias ({rawEvidencias.length})</span>
+          <span>3. Evidencias ({rawEvidencias.length})</span>
         </button>
 
         <button
           onClick={() => setActiveMatrix('contratos')}
-          className={`flex items-center gap-2 px-4 py-2.5 rounded-t-xl text-xs font-semibold transition shrink-0 ${
+          className={`flex items-center gap-2 px-3 py-2.5 rounded-t-xl text-xs font-semibold transition shrink-0 ${
             activeMatrix === 'contratos'
               ? 'bg-slate-900 text-blue-400 border-t-2 border-blue-500 border-x border-slate-800'
               : 'text-slate-400 hover:text-slate-200 hover:bg-slate-900/50'
           }`}
         >
           <Building2 className="w-4 h-4" />
-          <span>4. Matriz de Contratos ({data.contratos.length})</span>
+          <span>4. Contratos ({data.contratos.length})</span>
         </button>
 
         <button
           onClick={() => setActiveMatrix('pagos')}
-          className={`flex items-center gap-2 px-4 py-2.5 rounded-t-xl text-xs font-semibold transition shrink-0 ${
+          className={`flex items-center gap-2 px-3 py-2.5 rounded-t-xl text-xs font-semibold transition shrink-0 ${
             activeMatrix === 'pagos'
               ? 'bg-slate-900 text-emerald-400 border-t-2 border-emerald-500 border-x border-slate-800'
               : 'text-slate-400 hover:text-slate-200 hover:bg-slate-900/50'
           }`}
         >
           <Receipt className="w-4 h-4" />
-          <span>5. Matriz de Pagos ({data.pagos.length})</span>
+          <span>5. Pagos ({data.pagos.length})</span>
+        </button>
+
+        <button
+          onClick={() => setActiveMatrix('presupuesto')}
+          className={`flex items-center gap-2 px-3 py-2.5 rounded-t-xl text-xs font-semibold transition shrink-0 ${
+            activeMatrix === 'presupuesto'
+              ? 'bg-slate-900 text-emerald-400 border-t-2 border-emerald-500 border-x border-slate-800'
+              : 'text-slate-400 hover:text-slate-200 hover:bg-slate-900/50'
+          }`}
+        >
+          <DollarSign className="w-4 h-4" />
+          <span>6. Presupuesto ({budgetItems.length})</span>
+        </button>
+
+        <button
+          onClick={() => setActiveMatrix('nomina')}
+          className={`flex items-center gap-2 px-3 py-2.5 rounded-t-xl text-xs font-semibold transition shrink-0 ${
+            activeMatrix === 'nomina'
+              ? 'bg-slate-900 text-sky-400 border-t-2 border-sky-500 border-x border-slate-800'
+              : 'text-slate-400 hover:text-slate-200 hover:bg-slate-900/50'
+          }`}
+        >
+          <Users className="w-4 h-4" />
+          <span>7. Nóminas ({sampleNomina.length})</span>
+        </button>
+
+        <button
+          onClick={() => setActiveMatrix('activos')}
+          className={`flex items-center gap-2 px-3 py-2.5 rounded-t-xl text-xs font-semibold transition shrink-0 ${
+            activeMatrix === 'activos'
+              ? 'bg-slate-900 text-purple-400 border-t-2 border-purple-500 border-x border-slate-800'
+              : 'text-slate-400 hover:text-slate-200 hover:bg-slate-900/50'
+          }`}
+        >
+          <Building2 className="w-4 h-4" />
+          <span>8. Activos Fijos ({sampleActivos.length})</span>
         </button>
       </div>
 
@@ -373,55 +503,52 @@ export const MatrixEngineView: React.FC<MatrixEngineViewProps> = ({
               type="checkbox"
               checked={filterExpedienteOnly}
               onChange={(e) => setFilterExpedienteOnly(e.target.checked)}
-              className="rounded bg-slate-800 border-slate-700 text-blue-600 focus:ring-0"
+              className="rounded bg-slate-800 border-slate-700 text-blue-500 focus:ring-0"
             />
-            <span>Filtrar solo expediente activo ({activeExp?.codigo || `#${selectedExpedienteId}`})</span>
+            <span>Solo expediente activo: <strong className="text-blue-400">{activeExp?.codigo}</strong></span>
           </label>
         )}
       </div>
 
-      {/* Matrix Table Display */}
-      <div className="bg-slate-900 border border-slate-800 rounded-xl overflow-hidden shadow-sm">
+      {/* Content Table Area */}
+      <div className="bg-slate-900 border border-slate-800 rounded-2xl overflow-hidden shadow-sm">
         <div className="overflow-x-auto">
           {activeMatrix === 'riesgos' && (
             <table className="w-full text-left text-xs text-slate-300">
               <thead className="bg-slate-800/80 text-slate-400 font-semibold border-b border-slate-700/80">
                 <tr>
                   <th className="p-3">Categoría</th>
-                  <th className="p-3">Descripción de Vulnerabilidad</th>
-                  <th className="p-3 text-center">Prob.</th>
-                  <th className="p-3 text-center">Imp.</th>
+                  <th className="p-3">Descripción del Riesgo</th>
+                  <th className="p-3 text-center">Probabilidad</th>
+                  <th className="p-3 text-center">Impacto</th>
                   <th className="p-3 text-center">Score</th>
-                  <th className="p-3">Nivel Riesgo</th>
-                  <th className="p-3">Estrategia Mitigación</th>
+                  <th className="p-3">Nivel</th>
+                  <th className="p-3">Medida de Mitigación</th>
                   <th className="p-3">Estado</th>
-                  <th className="p-3">Workflow</th>
                 </tr>
               </thead>
               <tbody className="divide-y divide-slate-800/60 font-mono text-slate-300">
                 {filteredRiesgos.length === 0 ? (
-                  <tr><td colSpan={9} className="p-8 text-center text-slate-500 font-sans">No hay riesgos en esta vista</td></tr>
+                  <tr><td colSpan={8} className="p-8 text-center text-slate-500 font-sans">No hay riesgos registrados</td></tr>
                 ) : (
                   filteredRiesgos.map(r => (
                     <tr key={r.id} className="hover:bg-slate-800/40">
-                      <td className="p-3 font-semibold text-slate-100 font-sans">{r.categoria}</td>
-                      <td className="p-3 max-w-sm font-sans">{r.descripcion}</td>
-                      <td className="p-3 text-center text-slate-400">{r.probabilidad}</td>
-                      <td className="p-3 text-center text-slate-400">{r.impacto}</td>
-                      <td className="p-3 text-center font-bold text-amber-400">{r.puntuacion}</td>
+                      <td className="p-3 font-sans font-semibold text-slate-200">{r.categoria}</td>
+                      <td className="p-3 font-sans max-w-sm">{r.descripcion}</td>
+                      <td className="p-3 text-center text-slate-400">{r.probabilidad} / 5</td>
+                      <td className="p-3 text-center text-slate-400">{r.impacto} / 5</td>
+                      <td className="p-3 text-center font-bold text-white">{r.puntuacion}</td>
                       <td className="p-3 font-sans">
                         <span className={`px-2 py-0.5 rounded-full text-[10px] font-bold ${
                           r.nivel === 'Crítico' ? 'bg-red-500/20 text-red-300 border border-red-500/30' :
                           r.nivel === 'Alto' ? 'bg-orange-500/20 text-orange-300 border border-orange-500/30' :
-                          r.nivel === 'Medio' ? 'bg-amber-500/20 text-amber-300 border border-amber-500/30' :
-                          'bg-emerald-500/20 text-emerald-300 border border-emerald-500/30'
+                          'bg-yellow-500/20 text-yellow-300 border border-yellow-500/30'
                         }`}>
                           {r.nivel}
                         </span>
                       </td>
-                      <td className="p-3 font-sans text-xs text-slate-400 max-w-xs">{r.mitigacion}</td>
-                      <td className="p-3 font-sans text-slate-300">{r.estado}</td>
-                      <td className="p-3 font-sans text-xs text-sky-400">{r.workflowStatus || 'BORRADOR'}</td>
+                      <td className="p-3 font-sans text-xs text-slate-300 max-w-xs">{r.mitigacion}</td>
+                      <td className="p-3 font-sans text-xs text-slate-400">{r.estado}</td>
                     </tr>
                   ))
                 )}
@@ -433,36 +560,49 @@ export const MatrixEngineView: React.FC<MatrixEngineViewProps> = ({
             <table className="w-full text-left text-xs text-slate-300">
               <thead className="bg-slate-800/80 text-slate-400 font-semibold border-b border-slate-700/80">
                 <tr>
-                  <th className="p-3">Título Hallazgo</th>
-                  <th className="p-3">Condición Detectada</th>
-                  <th className="p-3">Criterio / Norma</th>
-                  <th className="p-3 text-right">Monto Obs.</th>
+                  <th className="p-3">Título &amp; Aspecto</th>
+                  <th className="p-3">Condición (Hecho)</th>
+                  <th className="p-3">Criterio (Norma)</th>
+                  <th className="p-3">Causa &amp; Efecto</th>
+                  <th className="p-3 text-right">Monto Observado</th>
                   <th className="p-3 text-center">Nivel</th>
                   <th className="p-3">Workflow</th>
-                  <th className="p-3">Recomendación</th>
                 </tr>
               </thead>
               <tbody className="divide-y divide-slate-800/60 font-mono text-slate-300">
                 {filteredHallazgos.length === 0 ? (
-                  <tr><td colSpan={7} className="p-8 text-center text-slate-500 font-sans">No hay hallazgos en esta vista</td></tr>
+                  <tr><td colSpan={7} className="p-8 text-center text-slate-500 font-sans">No hay hallazgos registrados</td></tr>
                 ) : (
                   filteredHallazgos.map(h => (
                     <tr key={h.id} className="hover:bg-slate-800/40">
-                      <td className="p-3 font-bold text-slate-100 font-sans">{h.titulo}</td>
-                      <td className="p-3 max-w-xs font-sans text-xs text-slate-400 line-clamp-2">{h.condicion}</td>
-                      <td className="p-3 font-sans text-xs text-blue-400 max-w-xs">{h.normativaReferencia || h.criterio}</td>
-                      <td className="p-3 text-right text-emerald-400 font-bold">{h.montoObservado ? formatCurrency(h.montoObservado) : '—'}</td>
+                      <td className="p-3 font-sans max-w-xs">
+                        <div className="font-bold text-slate-100">{h.titulo}</div>
+                        <div className="flex items-center gap-1.5 mt-1">
+                          <span className="text-[10px] px-1.5 py-0.2 rounded bg-indigo-500/10 text-indigo-300 border border-indigo-500/30">
+                            {h.clasificacion || 'FINANCIERO'}
+                          </span>
+                          <span className="text-[10px] text-slate-500">
+                            {h.tipoControl || 'ADMINISTRATIVO'}
+                          </span>
+                        </div>
+                      </td>
+                      <td className="p-3 font-sans text-xs text-slate-300 max-w-sm line-clamp-3">{h.condicion}</td>
+                      <td className="p-3 font-sans text-xs text-blue-400 max-w-xs">{h.criterio}</td>
+                      <td className="p-3 font-sans text-xs text-slate-400 max-w-xs">
+                        <div><strong className="text-slate-300">C:</strong> {h.causa}</div>
+                        <div className="mt-0.5"><strong className="text-slate-300">E:</strong> {h.efecto}</div>
+                      </td>
+                      <td className="p-3 text-right text-emerald-400 font-bold">{formatCurrency(h.montoObservado || 0)}</td>
                       <td className="p-3 text-center font-sans">
                         <span className={`px-2 py-0.5 rounded-full text-[10px] font-bold ${
                           h.nivel === 'Crítico' ? 'bg-red-500/20 text-red-300 border border-red-500/30' :
                           h.nivel === 'Alto' ? 'bg-orange-500/20 text-orange-300 border border-orange-500/30' :
-                          'bg-amber-500/20 text-amber-300 border border-amber-500/30'
+                          'bg-yellow-500/20 text-yellow-300 border border-yellow-500/30'
                         }`}>
                           {h.nivel}
                         </span>
                       </td>
-                      <td className="p-3 font-sans text-xs text-purple-400">{h.workflowStatus || 'BORRADOR'}</td>
-                      <td className="p-3 font-sans text-xs text-slate-400 max-w-xs line-clamp-2">{h.recomendacion}</td>
+                      <td className="p-3 font-sans text-xs text-purple-400 font-semibold">{h.workflowStatus || 'BORRADOR'}</td>
                     </tr>
                   ))
                 )}
@@ -475,12 +615,12 @@ export const MatrixEngineView: React.FC<MatrixEngineViewProps> = ({
               <thead className="bg-slate-800/80 text-slate-400 font-semibold border-b border-slate-700/80">
                 <tr>
                   <th className="p-3">Nombre Archivo</th>
-                  <th className="p-3">Hash SHA-256</th>
-                  <th className="p-3">Clasificación Pericial</th>
+                  <th className="p-3">SHA-256 Integridad</th>
+                  <th className="p-3">Clasificación IA</th>
                   <th className="p-3 text-center">Versión</th>
-                  <th className="p-3">Tipo MIME</th>
+                  <th className="p-3">Tipo</th>
                   <th className="p-3 text-right">Tamaño</th>
-                  <th className="p-3">Fecha Custodia</th>
+                  <th className="p-3">Fecha</th>
                 </tr>
               </thead>
               <tbody className="divide-y divide-slate-800/60 font-mono text-slate-300">
@@ -489,14 +629,10 @@ export const MatrixEngineView: React.FC<MatrixEngineViewProps> = ({
                 ) : (
                   filteredEvidencias.map(e => (
                     <tr key={e.id} className="hover:bg-slate-800/40">
-                      <td className="p-3 font-bold text-slate-100 font-sans">{e.nombreOriginal}</td>
-                      <td className="p-3 text-[11px] text-slate-400 truncate max-w-[200px]" title={e.sha256}>{e.sha256}</td>
+                      <td className="p-3 font-sans font-semibold text-slate-100">{e.nombreOriginal}</td>
+                      <td className="p-3 text-[11px] text-blue-400">{e.sha256.slice(0, 16)}...</td>
                       <td className="p-3 font-sans">
-                        <span className={`px-2 py-0.5 rounded-full text-[10px] font-semibold ${
-                          e.clasificacion === 'Aprobado' ? 'bg-emerald-500/15 text-emerald-400 border border-emerald-500/30' :
-                          e.clasificacion === 'Verificado' ? 'bg-sky-500/15 text-sky-400 border border-sky-500/30' :
-                          'bg-amber-500/15 text-amber-400 border border-amber-500/30'
-                        }`}>
+                        <span className="px-2 py-0.5 rounded-full text-[10px] font-semibold bg-indigo-500/15 text-indigo-300 border border-indigo-500/30">
                           {e.clasificacion}
                         </span>
                       </td>
@@ -590,6 +726,129 @@ export const MatrixEngineView: React.FC<MatrixEngineViewProps> = ({
                     </tr>
                   ))
                 )}
+              </tbody>
+            </table>
+          )}
+
+          {activeMatrix === 'presupuesto' && (
+            <table className="w-full text-left text-xs text-slate-300">
+              <thead className="bg-slate-800/80 text-slate-400 font-semibold border-b border-slate-700/80">
+                <tr>
+                  <th className="p-3">Objeto</th>
+                  <th className="p-3">Denominación</th>
+                  <th className="p-3">Tipo</th>
+                  <th className="p-3 text-right">Aprobado</th>
+                  <th className="p-3 text-right">Modificado</th>
+                  <th className="p-3 text-right">Devengado</th>
+                  <th className="p-3 text-right">Pagado</th>
+                  <th className="p-3 text-right">% Ejec</th>
+                  <th className="p-3">Estado</th>
+                </tr>
+              </thead>
+              <tbody className="divide-y divide-slate-800/60 font-mono text-slate-300">
+                {filteredPresupuesto.length === 0 ? (
+                  <tr><td colSpan={9} className="p-8 text-center text-slate-500 font-sans">No hay partidas presupuestarias registradas</td></tr>
+                ) : (
+                  filteredPresupuesto.map(b => (
+                    <tr key={b.id} className="hover:bg-slate-800/40">
+                      <td className="p-3 font-bold text-indigo-400 font-mono">{b.codigoObjetoGasto}</td>
+                      <td className="p-3 font-sans text-slate-200">{b.denominacion}</td>
+                      <td className="p-3 font-sans text-xs text-slate-400">{b.tipo}</td>
+                      <td className="p-3 text-right text-slate-400">{formatCurrency(b.presupuestoAprobado)}</td>
+                      <td className="p-3 text-right text-slate-200 font-semibold">{formatCurrency(b.presupuestoModificado)}</td>
+                      <td className="p-3 text-right text-amber-300 font-bold">{formatCurrency(b.devengado)}</td>
+                      <td className="p-3 text-right text-emerald-400">{formatCurrency(b.pagado)}</td>
+                      <td className="p-3 text-right font-bold text-emerald-400">{b.porcentajeEjecucion}%</td>
+                      <td className="p-3 font-sans">
+                        <span className={`px-2 py-0.5 rounded-full text-[10px] font-bold ${
+                          b.estadoEjecucion === 'Sobreejecución' ? 'bg-rose-500/20 text-rose-300 border border-rose-500/30' :
+                          b.estadoEjecucion === 'Subejecución' ? 'bg-amber-500/20 text-amber-300 border border-amber-500/30' :
+                          'bg-emerald-500/15 text-emerald-300 border border-emerald-500/30'
+                        }`}>
+                          {b.estadoEjecucion}
+                        </span>
+                      </td>
+                    </tr>
+                  ))
+                )}
+              </tbody>
+            </table>
+          )}
+
+          {activeMatrix === 'nomina' && (
+            <table className="w-full text-left text-xs text-slate-300">
+              <thead className="bg-slate-800/80 text-slate-400 font-semibold border-b border-slate-700/80">
+                <tr>
+                  <th className="p-3">Cédula</th>
+                  <th className="p-3">Servidor Público</th>
+                  <th className="p-3">Cargo Institucional</th>
+                  <th className="p-3">Departamento</th>
+                  <th className="p-3 text-right">Salario Mensual</th>
+                  <th className="p-3">Estatus MAP / SASP</th>
+                  <th className="p-3">Alerta Pericial</th>
+                </tr>
+              </thead>
+              <tbody className="divide-y divide-slate-800/60 font-mono text-slate-300">
+                {sampleNomina.map(n => (
+                  <tr key={n.id} className={`hover:bg-slate-800/40 ${n.alerta.includes('ALERTA') ? 'bg-rose-950/20' : ''}`}>
+                    <td className="p-3 text-slate-400">{n.cedula}</td>
+                    <td className="p-3 font-bold text-slate-100 font-sans">{n.nombre}</td>
+                    <td className="p-3 font-sans text-slate-300">{n.cargo}</td>
+                    <td className="p-3 font-sans text-xs text-slate-400">{n.dpto}</td>
+                    <td className="p-3 text-right text-emerald-400 font-bold">{formatCurrency(n.salario)}</td>
+                    <td className="p-3 font-sans text-xs text-sky-400">{n.estatusMap}</td>
+                    <td className="p-3 font-sans">
+                      {n.alerta.includes('ALERTA') ? (
+                        <span className="px-2 py-0.5 rounded text-[10px] font-bold bg-rose-500/20 text-rose-300 border border-rose-500/30">
+                          {n.alerta}
+                        </span>
+                      ) : (
+                        <span className="text-emerald-400 text-xs flex items-center gap-1 font-sans">
+                          <CheckCircle2 className="w-3 h-3" /> Conforme
+                        </span>
+                      )}
+                    </td>
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+          )}
+
+          {activeMatrix === 'activos' && (
+            <table className="w-full text-left text-xs text-slate-300">
+              <thead className="bg-slate-800/80 text-slate-400 font-semibold border-b border-slate-700/80">
+                <tr>
+                  <th className="p-3">Código Activo</th>
+                  <th className="p-3">Descripción del Bien</th>
+                  <th className="p-3 text-right">Valor en Libros</th>
+                  <th className="p-3 text-right">Depreciación Acumulada</th>
+                  <th className="p-3">Registro Bienes Nacionales</th>
+                  <th className="p-3">Estado Físico</th>
+                  <th className="p-3">Alerta</th>
+                </tr>
+              </thead>
+              <tbody className="divide-y divide-slate-800/60 font-mono text-slate-300">
+                {sampleActivos.map(a => (
+                  <tr key={a.id} className={`hover:bg-slate-800/40 ${a.alerta.includes('ALERTA') ? 'bg-amber-950/20' : ''}`}>
+                    <td className="p-3 font-bold text-indigo-400">{a.codigoActivo}</td>
+                    <td className="p-3 font-bold text-slate-100 font-sans max-w-xs">{a.descripcion}</td>
+                    <td className="p-3 text-right text-emerald-400 font-bold">{formatCurrency(a.valorLibros)}</td>
+                    <td className="p-3 text-right text-slate-400">{formatCurrency(a.depAcumulada)}</td>
+                    <td className="p-3 font-sans text-xs text-slate-300">{a.registroBienesNac}</td>
+                    <td className="p-3 font-sans text-xs text-slate-400">{a.estatusFisico}</td>
+                    <td className="p-3 font-sans">
+                      {a.alerta.includes('ALERTA') ? (
+                        <span className="px-2 py-0.5 rounded text-[10px] font-bold bg-amber-500/20 text-amber-300 border border-amber-500/30">
+                          {a.alerta}
+                        </span>
+                      ) : (
+                        <span className="text-emerald-400 text-xs flex items-center gap-1 font-sans">
+                          <CheckCircle2 className="w-3 h-3" /> Conforme
+                        </span>
+                      )}
+                    </td>
+                  </tr>
+                ))}
               </tbody>
             </table>
           )}

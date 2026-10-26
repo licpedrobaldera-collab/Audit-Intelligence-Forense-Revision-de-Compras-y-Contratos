@@ -403,4 +403,104 @@ export const api = {
     if (!res.ok) throw new Error('Error en consulta de chat pericial');
     return res.json();
   },
+
+  // Budget Execution (Ciclo Completo)
+  async getBudgetExecution(): Promise<{ success: boolean; items: any[] }> {
+    const res = await fetch('/api/budget-execution');
+    return res.json();
+  },
+
+  async saveBudgetExecution(data: any): Promise<{ success: boolean; record: any }> {
+    const res = await fetch('/api/budget-execution', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify(data),
+    });
+    if (!res.ok) {
+      const err = await res.json();
+      throw new Error(err.error || 'Error al guardar ejecución presupuestaria');
+    }
+    return res.json();
+  },
+
+  async deleteBudgetExecution(id: number, user: string): Promise<{ success: boolean }> {
+    const res = await fetch(`/api/budget-execution/${id}?user=${encodeURIComponent(user)}`, { method: 'DELETE' });
+    return res.json();
+  },
+
+  // Evidence Folders
+  async getEvidenceFolders(): Promise<{ success: boolean; folders: any[] }> {
+    const res = await fetch('/api/evidence-folders');
+    return res.json();
+  },
+
+  async addEvidenceFolderItem(data: { folderId: string; tipo: string; nombre: string; url?: string; tamano?: string; texto?: string; user: string }): Promise<{ success: boolean; folder: any }> {
+    const res = await fetch('/api/evidence-folders/add-item', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify(data),
+    });
+    if (!res.ok) {
+      const err = await res.json();
+      throw new Error(err.error || 'Error al agregar elemento a carpeta de evidencia');
+    }
+    return res.json();
+  },
+
+  // Procurement Audits (Pliegos vs Contratos vs Adendas >25%)
+  async getProcurementAudits(): Promise<{ success: boolean; items: any[] }> {
+    const res = await fetch('/api/procurement-audits');
+    return res.json();
+  },
+
+  async saveProcurementAudit(data: any): Promise<{ success: boolean; record: any }> {
+    const res = await fetch('/api/procurement-audits', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify(data),
+    });
+    if (!res.ok) {
+      const err = await res.json();
+      throw new Error(err.error || 'Error al guardar auditoría de contratación');
+    }
+    return res.json();
+  },
+
+  // Autonomous Checkpoint
+  async getCheckpoint(): Promise<{ success: boolean; checkpoint: any }> {
+    const res = await fetch('/api/checkpoint');
+    return res.json();
+  },
+
+  async syncCheckpoint(user: string): Promise<{ success: boolean; checkpoint: any }> {
+    const res = await fetch('/api/checkpoint/sync', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ user }),
+    });
+    return res.json();
+  },
+
+  async toggleCheckpointTask(taskId: string, user: string): Promise<{ success: boolean; task: any }> {
+    const res = await fetch('/api/checkpoint/toggle-task', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ taskId, user }),
+    });
+    return res.json();
+  },
+
+  // Specialized INCART Online Audit
+  async auditIncartOnline(user: string): Promise<{ success: boolean; result: any; savedCount: number }> {
+    const res = await fetch('/api/audit/incart', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ user }),
+    });
+    if (!res.ok) {
+      const err = await res.json();
+      throw new Error(err.error || 'Error en auditoría en línea del INCART');
+    }
+    return res.json();
+  },
 };

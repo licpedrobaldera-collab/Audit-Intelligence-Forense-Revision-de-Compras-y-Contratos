@@ -323,9 +323,36 @@ export const CrossRectorAuditView: React.FC<CrossRectorAuditViewProps> = ({
               type="text"
               value={entityName}
               onChange={(e) => setEntityName(e.target.value)}
-              placeholder="Ej. Ministerio de Obras Públicas, Dirección General de Aduanas, etc."
+              placeholder="Ej. Instituto Nacional del Cáncer Rosa Emilia Sánchez Pérez de Tavares (INCART)"
               className="w-full bg-slate-950 border border-slate-800 rounded-xl px-3.5 py-2.5 text-xs text-slate-100 focus:outline-none focus:border-blue-500 font-medium"
             />
+            <div className="flex items-center gap-1.5 mt-2 flex-wrap text-[11px]">
+              <span className="text-slate-500 text-[10px] font-semibold">Cargar Perfil Oficial:</span>
+              <button
+                type="button"
+                onClick={() => {
+                  setEntityName('Instituto Nacional del Cáncer Rosa Emilia Sánchez Pérez de Tavares (INCART)');
+                  setEntityUrl('https://www.incart.gob.do/transparencia');
+                  setSearchTopic('Procesos de compras, fármacos oncológicos, aceleradores lineales LINAC y adendas INCART');
+                  setInputMode('link');
+                }}
+                className="px-2 py-0.5 rounded-md bg-indigo-500/15 text-indigo-300 border border-indigo-500/30 hover:bg-indigo-500/25 transition font-medium"
+              >
+                INCART (https://www.incart.gob.do/transparencia)
+              </button>
+              <button
+                type="button"
+                onClick={() => {
+                  setEntityName('Ministerio de Obras Públicas y Comunicaciones (MOPC)');
+                  setEntityUrl('https://mopc.gob.do/transparencia/compras-y-licitaciones');
+                  setSearchTopic('Licitaciones de asfalto, contratos viales y pagos 2025-2026');
+                  setInputMode('link');
+                }}
+                className="px-2 py-0.5 rounded-md bg-slate-800 text-slate-300 border border-slate-700 hover:bg-slate-700 transition"
+              >
+                MOPC
+              </button>
+            </div>
           </div>
 
           <div className="md:col-span-6">
